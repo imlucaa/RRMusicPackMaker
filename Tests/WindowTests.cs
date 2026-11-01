@@ -13,11 +13,17 @@ public class WindowTests : IDisposable
     {
         Directory.CreateDirectory(_data);
         Environment.SetEnvironmentVariable("RRMUSIC_DATA", _data);
+        // Never touch the real install or Wheel Wizard from a test.
+        Environment.SetEnvironmentVariable("RRMUSIC_MODS", Path.Combine(_data, "ww", "Mods"));
+        Environment.SetEnvironmentVariable("RRMUSIC_RR", Path.Combine(_data, "rr"));
+        Directory.CreateDirectory(Path.Combine(_data, "rr"));
     }
 
     public void Dispose()
     {
         Environment.SetEnvironmentVariable("RRMUSIC_DATA", null);
+        Environment.SetEnvironmentVariable("RRMUSIC_MODS", null);
+        Environment.SetEnvironmentVariable("RRMUSIC_RR", null);
         Directory.Delete(_data, true);
     }
 
@@ -200,6 +206,99 @@ public class WindowTests : IDisposable
         Pump(() => load.IsCompleted);
         Assert.True(load.IsCompletedSuccessfully);
         editor.Close();
+    });
+
+    [Fact]
+    public void Sidebar_SectionTitles_CannotBeSelected() => OnUiThread(() =>
+    {
+        using var form = OpenWindow();
+        form.SelectCategory(Catalog.CatMenu);
+        var before = form.SidebarSelectionForTest;
+        for (int i = 0; i < form.SidebarCountForTest; i++)
+        {
+            form.PickSidebarIndexForTest(i);
+            Assert.False(((SideList.Item)form.SidebarSelectionForTest!).IsHeader);
+        }
+        form.SelectCategory(Catalog.CatMenu);
+        Assert.Equal(before, form.SidebarSelectionForTest);
+        form.Close();
+    });
+
+    [Fact]
+    public void Sidebar_Menus_ShowsOnlyMenus() => OnUiThread(() =>
+    {
+        using var form = OpenWindow();
+        form.SelectCategory(Catalog.CatMenu);
+        Assert.Equal(form.Rows.Count(r => r.Category == Catalog.CatMenu), form.VisibleCount);
+        form.Close();
+    });
+
+    [Fact]
+    public void Thumbnail_AndStatusPills_DrawWithoutErrors_InBothThemes() => OnUiThread(() =>
+    {
+        string song = WriteSong();
+        using var form = OpenWindow();
+        form.HandleDrop([song], 0);
+        form.ToggleTheme();
+        Application.DoEvents();
+        using var bitmap = new Bitmap(form.Width, form.Height);
+        form.DrawToBitmap(bitmap, new Rectangle(0, 0, form.Width, form.Height));
+        form.ToggleTheme();
+        form.DrawToBitmap(bitmap, new Rectangle(0, 0, form.Width, form.Height));
+        form.Close();
+    });
+
+    [Fact]
+    public void BuildAndAdd_PutsSongInModAndPatches() => OnUiThread(() =>
+    {
+        string song = WriteSong();
+        AppStorage.SaveSettings(new AppSettings { Theme = "Dark", OutputFolder = Path.Combine(_data, "packs") });
+        using var form = OpenWindow();
+        form.HandleDrop([song], 0);
+        string file = form.Rows.First(r => r.IsAssigned).FileBase + ".brstm";
+
+        var build = form.BuildAndAddAsync();
+        Pump(() => build.IsCompleted);
+
+        Assert.True(build.IsCompletedSuccessfully, build.Exception?.ToString());
+        Assert.True(File.Exists(Path.Combine(_data, "rr", "Patches", file)));
+        Assert.True(File.Exists(Path.Combine(_data, "ww", "Mods", "My Music Pack", file)));
+        Assert.True(File.Exists(Path.Combine(_data, "ww", "Mods", "My Music Pack", "My Music Pack.ini")));
+
+        // One click also exports a complete pack someone with a real Wii can use.
+        Assert.Equal("Export pack and add to Patches", form.ActionButtonTextForTest);
+        string export = form.ExportedZipForTest!;
+        Assert.True(File.Exists(export));
+        using (var zip = System.IO.Compression.ZipFile.OpenRead(export))
+        {
+            var names = zip.Entries.Select(e => e.FullName.Replace('\\', '/')).ToList();
+            Assert.Contains($"RetroRewind6/Patches/{file}", names);
+            Assert.Contains("README.txt", names);
+            Assert.Contains("credits.csv", names);
+            Assert.DoesNotContain(names, name => name.EndsWith(".brsar", StringComparison.OrdinalIgnoreCase));
+            using var reader = new StreamReader(zip.GetEntry("README.txt")!.Open());
+            string readme = reader.ReadToEnd();
+            Assert.Contains("SD:/RetroRewind6/Patches", readme);
+            Assert.Contains("Wheel Wizard", readme);
+        }
+        form.Close();
+    });
+
+    [Fact]
+    public void BuildAndAdd_SongMissing_InstallsNothing() => OnUiThread(() =>
+    {
+        string song = WriteSong();
+        AppStorage.SaveSettings(new AppSettings { Theme = "Dark", OutputFolder = Path.Combine(_data, "packs") });
+        using var form = OpenWindow();
+        form.HandleDrop([song], 0);
+        File.Delete(song);
+
+        var build = form.BuildAndAddAsync();
+        Pump(() => build.IsCompleted);
+
+        Assert.False(Directory.Exists(Path.Combine(_data, "ww", "Mods", "My Music Pack")));
+        Assert.False(Directory.Exists(Path.Combine(_data, "rr", "Patches")));
+        form.Close();
     });
 
     [Fact]

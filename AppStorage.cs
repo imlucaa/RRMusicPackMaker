@@ -7,6 +7,12 @@ public sealed class AppSettings
     /// <summary>"Light", "Dark" or "System".</summary>
     public string Theme { get; set; } = "System";
     public string OutputFolder { get; set; } = "";
+
+    /// <summary>Raises the music volumes in the player's own copy of revo_kart.brsar when installing.</summary>
+    public bool BoostMusicSlots { get; set; } = true;
+
+    /// <summary>The player's Mario Kart Wii file, if Wheel Wizard can't tell us where it is.</summary>
+    public string GameFile { get; set; } = "";
 }
 
 /// <summary>Where the app keeps its settings and the autosaved project.</summary>

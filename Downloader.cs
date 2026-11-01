@@ -2,14 +2,16 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace RRMusicPackMaker;
 
 public enum QueryKind { Empty, Link, Search, Protected }
 
-public sealed record SearchResult(string Link, string Title, string Uploader, string Duration)
+public sealed record SearchResult(string Link, string Title, string Uploader, string Duration, string Album = "", long Plays = 0, bool Official = false)
 {
-    public string Display => Uploader.Length > 0 ? $"{Title}   ·   {Uploader}   ·   {Duration}" : $"{Title}   ·   {Duration}";
+    public string Display => string.Join("   ·   ", new[] { Title, Uploader, Duration }.Where(part => part.Length > 0));
 }
 
 public sealed record DownloadedSong(string Path, string Title, string Artist);
@@ -24,6 +26,13 @@ public static class Downloader
     private const string ProgressPrefix = "PROGRESS";
     private const string FilePrefix = "FILE";
     private const int SearchCount = 8;
+    private const string MusicSearchUrl = "https://music.youtube.com/youtubei/v1/search?prettyPrint=false";
+    private const string MusicSongsFilter = "EgWKAQIIAWoMEA4QChADEAQQCRAF";
+    private const string MusicVideosFilter = "EgWKAQIQAWoMEA4QChADEAQQCRAF";
+    private const string TopicSuffix = " - Topic";
+    private const double ExactNameBonus = 2;
+    private const long HitPlays = 100_000;
+    private const double HitFloor = 0.001;
 
     // These services encrypt their audio, so yt-dlp cannot and should not fetch it.
     private static readonly string[] ProtectedHosts =
@@ -58,9 +67,9 @@ public static class Downloader
         // One song only: never a whole playlist, a live stream or something enormous.
         "--no-playlist", "--playlist-items", "1", "--match-filter", "!is_live", "--max-filesize", "300M",
         "--no-mtime", "--windows-filenames", "--ffmpeg-location", ffmpegFolder,
-        "-P", folder, "-o", "%(title).120B [%(id)s].%(ext)s",
+        "-P", folder, "-o", "%(artist,uploader,channel)s - %(track,title).100B [%(id)s].%(ext)s",
         "--progress", "--newline", "--progress-template", $"download:{ProgressPrefix} %(progress._percent_str)s",
-        "--print", $"after_move:{FilePrefix}\t%(filepath)s\t%(title)s\t%(artist,creator,uploader,channel)s",
+        "--print", $"after_move:{FilePrefix}\t%(filepath)s\t%(track,title)s\t%(artist,creator,uploader,channel)s",
         "--", target,
     ];
 
@@ -95,7 +104,10 @@ public static class Downloader
         string[] parts = line.Split('\t');
         if (parts.Length < 4 || parts[0] != FilePrefix)
             return null;
-        return new DownloadedSong(parts[1], parts[2], parts[3] == "NA" ? "" : parts[3]);
+        string artist = parts[3] == "NA" ? "" : parts[3];
+        if (artist.EndsWith(TopicSuffix, StringComparison.Ordinal))
+            artist = artist[..^TopicSuffix.Length];
+        return new DownloadedSong(parts[1], parts[2], artist);
     }
 
     internal static double? ParseProgress(string line)
@@ -189,23 +201,227 @@ public static class Downloader
         throw new DownloadFailedException("Couldn't save yt-dlp in the app's folder or data folder.");
     }
 
-    internal static string ExpectedHash(string sums)
+    internal static string ExpectedHash(string sums, string file = ToolName)
     {
         foreach (string line in sums.Split('\n'))
         {
             string[] parts = line.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length == 2 && parts[1].TrimStart('*') == ToolName)
+            if (parts.Length == 2 && parts[1].TrimStart('*') == file)
                 return parts[0];
         }
-        throw new DownloadFailedException("The yt-dlp release has no checksum for its Windows program, so it was not installed.");
+        throw new DownloadFailedException($"The release has no checksum for {file}, so it was not installed.");
     }
 
+    /// <summary>
+    /// Official songs from YouTube Music first. Only if none match, falls back to its music videos,
+    /// then to plain YouTube. Results from a fallback are not marked Official.
+    /// </summary>
     public static async Task<List<SearchResult>> SearchAsync(string query, Action<string> status, CancellationToken cancel)
+    {
+        status("Searching YouTube Music...");
+        var songs = await TryMusicSearchAsync(query, MusicSongsFilter, cancel);
+        var official = RankMusicResults(query, songs).Select(song => song with { Official = true }).ToList();
+        if (official.Count > 0)
+            return official;
+
+        status("No official song found. Looking for music videos...");
+        var videos = RankMusicResults(query, await TryMusicSearchAsync(query, MusicVideosFilter, cancel));
+        if (videos.Count > 0)
+            return videos;
+
+        status("Nothing on YouTube Music. Searching YouTube...");
+        return await SearchYouTubeAsync(query, status, cancel);
+    }
+
+    /// <summary>A failed music search isn't fatal, because the fallbacks can still answer.</summary>
+    private static async Task<List<SearchResult>> TryMusicSearchAsync(string query, string filter, CancellationToken cancel)
+    {
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0");
+            http.DefaultRequestHeaders.Add("Origin", "https://music.youtube.com");
+            string body = JsonSerializer.Serialize(new
+            {
+                context = new
+                {
+                    client = new
+                    {
+                        clientName = "WEB_REMIX",
+                        clientVersion = $"1.{DateTime.UtcNow.AddDays(-1):yyyyMMdd}.01.00",
+                        hl = "en",
+                    },
+                },
+                query,
+                @params = filter,
+            });
+            using var content = new StringContent(body, Encoding.UTF8, "application/json");
+            using var response = await http.PostAsync(MusicSearchUrl, content, cancel);
+            response.EnsureSuccessStatusCode();
+            return ParseMusicResults(await response.Content.ReadAsStringAsync(cancel));
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException || (ex is TaskCanceledException && !cancel.IsCancellationRequested))
+        {
+            return [];
+        }
+    }
+
+    /// <summary>Reads songs and videos out of a YouTube Music search reply.</summary>
+    internal static List<SearchResult> ParseMusicResults(string json)
+    {
+        var results = new List<SearchResult>();
+        using var document = JsonDocument.Parse(json);
+        Walk(document.RootElement, results);
+        return results;
+    }
+
+    private static void Walk(JsonElement element, List<SearchResult> results)
+    {
+        if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+                Walk(item, results);
+        }
+        else if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (property.NameEquals("musicResponsiveListItemRenderer"))
+                {
+                    if (ParseMusicItem(property.Value) is { } result)
+                        results.Add(result);
+                }
+                else
+                {
+                    Walk(property.Value, results);
+                }
+            }
+        }
+    }
+
+    private static SearchResult? ParseMusicItem(JsonElement item)
+    {
+        if (!item.TryGetProperty("playlistItemData", out var data)
+            || !data.TryGetProperty("videoId", out var idElement)
+            || idElement.GetString() is not { Length: > 0 } id
+            || !item.TryGetProperty("flexColumns", out var columns)
+            || columns.GetArrayLength() < 2)
+            return null;
+
+        string title = string.Concat(ColumnRuns(columns[0]));
+        if (title.Length == 0)
+            return null;
+
+        // The second column reads "Artist & Artist • Album • 2:02", with "42M views" in place of the album on videos.
+        var groups = new List<string> { "" };
+        foreach (string run in ColumnRuns(columns[1]))
+        {
+            if (run.Trim() == "•")
+                groups.Add("");
+            else
+                groups[^1] += run;
+        }
+        string artist = groups[0].Trim();
+        string duration = groups.Skip(1).LastOrDefault(group => Regex.IsMatch(group.Trim(), @"^\d+(:\d\d)+$"))?.Trim() ?? "";
+        string album = groups.Skip(1).FirstOrDefault(group => group.Trim() != duration && !IsCount(group))?.Trim() ?? "";
+
+        long plays = 0;
+        foreach (string text in groups.Skip(1).Concat(columns.GetArrayLength() > 2 ? [string.Concat(ColumnRuns(columns[2]))] : []))
+            if (IsCount(text))
+                plays = Math.Max(plays, ParseCount(text));
+
+        return new SearchResult($"https://music.youtube.com/watch?v={id}", title, artist, duration, album, plays);
+    }
+
+    private static List<string> ColumnRuns(JsonElement column)
+    {
+        var runs = new List<string>();
+        if (column.TryGetProperty("musicResponsiveListItemFlexColumnRenderer", out var renderer)
+            && renderer.TryGetProperty("text", out var text)
+            && text.TryGetProperty("runs", out var items))
+            foreach (var run in items.EnumerateArray())
+                if (run.TryGetProperty("text", out var value))
+                    runs.Add(value.GetString() ?? "");
+        return runs;
+    }
+
+    private static bool IsCount(string text) => Regex.IsMatch(text.Trim(), @"^[\d.,]+[KMB]?\s+(plays?|views?)$", RegexOptions.IgnoreCase);
+
+    /// <summary>Reads "6.2M plays" as 6200000.</summary>
+    internal static long ParseCount(string text)
+    {
+        var match = Regex.Match(text, @"([\d.,]+)\s*([KMB]?)", RegexOptions.IgnoreCase);
+        if (!match.Success || !double.TryParse(match.Groups[1].Value.Replace(",", ""), NumberStyles.Float, CultureInfo.InvariantCulture, out double number))
+            return 0;
+        double scale = match.Groups[2].Value.ToUpperInvariant() switch { "K" => 1e3, "M" => 1e6, "B" => 1e9, _ => 1 };
+        return (long)(number * scale);
+    }
+
+    /// <summary>
+    /// Keeps results with an artist whose title or artist matches the search. Best first: most search
+    /// words found, then popularity, where an exact name counts as much as being 100 times more played.
+    /// When the top result is a real hit, tracks that almost nobody plays are dropped.
+    /// </summary>
+    internal static List<SearchResult> RankMusicResults(string query, List<SearchResult> results)
+    {
+        string[] words = Words(query);
+        var scored = results
+            .Where(result => result.Uploader.Length > 0 && result.Duration.Length > 0)
+            .Select(result =>
+            {
+                string[] title = Words(result.Title);
+                string[] named = [.. title, .. Words(result.Uploader)];
+                string[] all = [.. named, .. Words(result.Album)];
+                int direct = words.Count(word => named.Any(other => WordMatches(word, other)));
+                int found = words.Count(word => all.Any(other => WordMatches(word, other)));
+                bool exact = Same(words, title) || (direct == words.Length && named.Length == words.Length);
+                return (Result: result, Direct: direct, Found: found, Weight: Math.Log10(result.Plays + 1) + (exact ? ExactNameBonus : 0));
+            })
+            .Where(item => item.Direct > 0)
+            .ToList();
+
+        // When something matches every word, partial matches are only noise.
+        if (scored.Any(item => item.Found == words.Length))
+            scored = scored.Where(item => item.Found == words.Length).ToList();
+
+        var ranked = scored
+            .OrderByDescending(item => item.Found)
+            .ThenByDescending(item => item.Weight)
+            .Select(item => item.Result)
+            .DistinctBy(result => result.Link)
+            .ToList();
+
+        if (ranked.Count > 0 && ranked[0].Plays >= HitPlays)
+        {
+            long floor = (long)(ranked[0].Plays * HitFloor);
+            ranked = ranked.Where(result => result.Plays >= floor).ToList();
+        }
+        return ranked.Take(SearchCount).ToList();
+    }
+
+    private static bool Same(string[] words, string[] other) =>
+        words.Length == other.Length && words.Zip(other).All(pair => WordMatches(pair.First, pair.Second));
+
+    private static string[] Words(string text) =>
+        Regex.Matches(text.ToLowerInvariant(), @"[\p{L}\p{N}*]+").Select(match => match.Value).Where(word => word.Trim('*').Length > 0).ToArray();
+
+    /// <summary>A censored word like "f*ck" matches "fuck".</summary>
+    private static bool WordMatches(string word, string other)
+    {
+        if (word == other)
+            return true;
+        if (!other.Contains('*') && !word.Contains('*'))
+            return false;
+        string pattern = "^" + Regex.Escape(other).Replace(@"\*", ".*") + "$";
+        string wordPattern = "^" + Regex.Escape(word).Replace(@"\*", ".*") + "$";
+        return Regex.IsMatch(word, pattern) || Regex.IsMatch(other, wordPattern);
+    }
+
+    private static async Task<List<SearchResult>> SearchYouTubeAsync(string query, Action<string> status, CancellationToken cancel)
     {
         string tool = await EnsureToolAsync(status, cancel);
         var results = new List<SearchResult>();
         var errors = new StringBuilder();
-        status("Searching...");
         int exit = await RunAsync(tool, SearchArguments(query, FindNode()), line =>
         {
             if (ParseSearchLine(line) is { } result)
@@ -335,13 +551,13 @@ public static class Downloader
 public sealed class DownloadForm : Form
 {
     private readonly string _folder;
-    private readonly FieldBox _query = new("Paste a link, or type a song name") { Dock = DockStyle.Fill };
-    private readonly Button _go = new() { Text = "Search", Tag = Theme.AccentTag, Width = 110, Height = 32, Margin = new Padding(8, 0, 0, 0) };
+    private readonly FieldBox _query = new("Type a song name, or paste a link") { Dock = DockStyle.Fill };
+    private readonly ModernButton _go = new() { Text = "Search", Tag = Theme.AccentTag, Width = 110, Height = 32, Margin = new Padding(8, 0, 0, 0) };
     private readonly SideList _results = new() { Dock = DockStyle.Fill, Tag = Theme.PanelTag };
     private readonly Label _status = new() { AutoSize = false, Dock = DockStyle.Fill, Tag = Theme.MutedTag, TextAlign = ContentAlignment.MiddleLeft };
     private readonly ThinProgress _progress = new() { Dock = DockStyle.Bottom };
-    private readonly Button _download = new() { Text = "Download", Tag = Theme.AccentTag, AutoSize = true, Height = 32, Margin = new Padding(6, 0, 0, 0), Enabled = false };
-    private readonly Button _cancel = new() { Text = "Cancel", AutoSize = true, Height = 32 };
+    private readonly ModernButton _download = new() { Text = "Download", Tag = Theme.AccentTag, AutoSize = true, Height = 32, Margin = new Padding(6, 0, 0, 0), Enabled = false };
+    private readonly ModernButton _cancel = new() { Text = "Cancel", AutoSize = true, Height = 32 };
     private List<SearchResult> _found = [];
     private CancellationTokenSource? _work;
 
@@ -355,7 +571,7 @@ public sealed class DownloadForm : Form
         Height = 520;
         MinimumSize = new Size(560, 400);
         StartPosition = FormStartPosition.CenterParent;
-        Font = new Font("Segoe UI", 9.5f);
+        Font = Theme.UiFont();
         BuildLayout();
         Theme.Apply(this);
         FormClosed += (_, _) => _work?.Cancel();
@@ -375,7 +591,7 @@ public sealed class DownloadForm : Form
 
         var note = new Label
         {
-            Text = "YouTube, YouTube Music, SoundCloud, Bandcamp and more. Only download what you have the right to use.",
+            Text = "Finds official songs on YouTube Music. Only download what you have the right to use.",
             AutoSize = false,
             Height = 24,
             Dock = DockStyle.Bottom,
@@ -423,14 +639,12 @@ public sealed class DownloadForm : Form
     private void UpdateDownloadButton()
     {
         _download.Enabled = _work == null && _results.SelectedIndex >= 0;
-        Theme.Apply(_download);
     }
 
     private void UpdateGoButton()
     {
         _go.Text = Downloader.Classify(_query.Box.Text) == QueryKind.Link ? "Download" : "Search";
         _go.Enabled = _work == null;
-        Theme.Apply(_go);
     }
 
     private void SetBusy(bool busy)
@@ -439,7 +653,6 @@ public sealed class DownloadForm : Form
         _query.Box.ReadOnly = busy;
         UpdateGoButton();
         UpdateDownloadButton();
-        Theme.Apply(_cancel);
     }
 
     internal async Task GoAsync()
@@ -450,7 +663,7 @@ public sealed class DownloadForm : Form
         switch (Downloader.Classify(text))
         {
             case QueryKind.Empty:
-                _status.Text = "Paste a link, or type a song name.";
+                _status.Text = "Type a song name, or paste a link.";
                 break;
             case QueryKind.Protected:
                 _status.Text = "That service copy-protects its music, so it can't be downloaded. Type the song name instead.";
@@ -476,7 +689,9 @@ public sealed class DownloadForm : Form
                 return;
             foreach (var result in _found)
                 _results.Items.Add(new SideList.Item(result.Display, -1));
-            _status.Text = _found.Count == 0 ? "No results. Try other words." : "Pick a song, then click Download.";
+            _status.Text = _found.Count == 0 ? "No results. Try other words."
+                : _found[0].Official ? "Official songs. Pick one, then click Download."
+                : "No official song found, so these may not be official. Check before you use one.";
             if (_found.Count > 0)
                 _results.SelectedIndex = 0;
         }
@@ -493,10 +708,13 @@ public sealed class DownloadForm : Form
     private async Task DownloadSelectedAsync()
     {
         if (_work == null && _results.SelectedIndex >= 0 && _results.SelectedIndex < _found.Count)
-            await DownloadAsync(_found[_results.SelectedIndex].Link);
+        {
+            var pick = _found[_results.SelectedIndex];
+            await DownloadAsync(pick.Link, pick);
+        }
     }
 
-    private async Task DownloadAsync(string target)
+    private async Task DownloadAsync(string target, SearchResult? pick = null)
     {
         using var work = Begin();
         _progress.Fraction = 0;
@@ -506,7 +724,8 @@ public sealed class DownloadForm : Form
                 fraction => OnWindow(() => _progress.Fraction = fraction), work.Token);
             if (IsDisposed)
                 return;
-            Result = song;
+            // The search result has the cleanest title and artist, so it wins for official songs.
+            Result = pick is { Official: true } ? song with { Title = pick.Title, Artist = pick.Uploader } : song;
             DialogResult = DialogResult.OK;
             Close();
         }
@@ -567,4 +786,5 @@ public sealed class DownloadForm : Form
     internal void SetQueryForTest(string text) => _query.Box.Text = text;
     internal string StatusForTest => _status.Text;
     internal string GoTextForTest => _go.Text;
+    internal int ResultCountForTest => _results.Items.Count;
 }

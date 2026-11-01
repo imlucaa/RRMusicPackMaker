@@ -52,6 +52,71 @@ public class CatalogTests
     }
 }
 
+public class SortingTests
+{
+    private static TrackRow Row(string name, string category) =>
+        new() { Name = name, FileBase = name, Category = category, Platform = Catalog.PlatformOf(Catalog.MainName(name)) };
+
+    [Theory]
+    [InlineData("Wii Luigi Circuit", true)]
+    [InlineData("Wii Toad's Factory > SW2 Toad's Factory", true)]
+    [InlineData("N64 DK's Jungle Parkway", true)]
+    [InlineData("N64 DK Jungle Parkway", true)]
+    [InlineData("DS Peach Garden", true)]
+    [InlineData("SNES Mario Circuit 3 (variant 1)", true)]
+    [InlineData("SNES Mario Circuit 1", false)]
+    [InlineData("Wii U Rainbow Road", false)]
+    [InlineData("GBA Luigi Circuit", false)]
+    [InlineData("Phendrana Frostbite", false)]
+    public void IsReg_OnlyTheOriginal32(string name, bool expected) =>
+        Assert.Equal(expected, Catalog.IsReg(name));
+
+    [Theory]
+    [InlineData("Wii U Water Park", "Wii U")]
+    [InlineData("Wii Coconut Mall", "Wii")]
+    [InlineData("SW2 Crown City", "SW2")]
+    [InlineData("SW Battle Stadium", "SW")]
+    [InlineData("3DS Daisy Hills", "3DS")]
+    [InlineData("Phendrana Frostbite", "")]
+    [InlineData("DSi Fake Track", "")]
+    public void PlatformOf_ReadsTheConsole(string name, string expected) =>
+        Assert.Equal(expected, Catalog.PlatformOf(name));
+
+    [Fact]
+    public void Organize_GroupsInSidebarOrder()
+    {
+        var rows = Catalog.Organize([
+            Row("title", Catalog.CatMenu),
+            Row("Phendrana", Catalog.CatCustom),
+            Row("GBA Luigi Circuit", Catalog.CatRetro),
+            Row("Wii Coconut Mall", Catalog.CatRegs),
+        ]);
+        Assert.Equal([Catalog.CatRegs, Catalog.CatRetro, Catalog.CatCustom, Catalog.CatMenu], rows.Select(r => r.Category));
+    }
+
+    [Fact]
+    public void Organize_InsideAGroup_ByConsoleThenName_VariantsFollowTheirTrack()
+    {
+        var rows = Catalog.Organize([
+            Row("3DS Daisy Hills", Catalog.CatRetro),
+            Row("SNES Mario Circuit 2", Catalog.CatRetro),
+            Row("SNES Bowser Castle", Catalog.CatRetro),
+            Row("SNES Bowser Castle > Tour Bowser Castle", Catalog.CatRetro),
+            Row("GBA Peach Circuit", Catalog.CatRetro),
+        ]);
+        Assert.Equal(
+            ["SNES Bowser Castle", "SNES Bowser Castle > Tour Bowser Castle", "SNES Mario Circuit 2", "GBA Peach Circuit", "3DS Daisy Hills"],
+            rows.Select(r => r.Name));
+    }
+
+    [Fact]
+    public void Organize_KeepsGameMusicInItsOwnOrder()
+    {
+        var rows = Catalog.Organize([Row("Zed menu", Catalog.CatMenu), Row("Alpha menu", Catalog.CatMenu)]);
+        Assert.Equal("Zed menu", rows[0].Name);
+    }
+}
+
 public class MatchingTests
 {
     private static List<TrackRow> Rows() =>
@@ -170,13 +235,78 @@ public class ProcessingTests
         Assert.Equal(before, song.Channels[0]);
     }
 
-    [Fact]
-    public void ApplyVolume_SixDecibels_RoughlyDoubles()
+    private static double Rms(Song song) =>
+        20 * Math.Log10(Math.Sqrt(song.Channels[0].Average(s => (double)s * s)) / 32768);
+
+    private static int Peak(Song song) => song.Channels.Max(c => c.Max(s => Math.Abs((int)s)));
+
+    /// <summary>A loud master like a modern song: steady and close to full scale.</summary>
+    private static short[] Loud(int count)
     {
-        var song = Stereo(Tone(3200, 440, level: 4000), 0, 3200);
-        int before = song.Channels[0].Max(s => Math.Abs((int)s));
-        Processing.ApplyVolume(song, 6);
-        Assert.InRange(song.Channels[0].Max(s => Math.Abs((int)s)), before * 1.9, before * 2.1);
+        var random = new Random(3);
+        var data = new short[count];
+        for (int i = 0; i < count; i++)
+            data[i] = (short)Math.Clamp(random.Next(-26000, 26000), short.MinValue, short.MaxValue);
+        return data;
+    }
+
+    [Fact]
+    public void ApplyLevel_EvenLoudness_ReachesRetroRewindLevel()
+    {
+        var song = Stereo(Tone(64000, 440, level: 4000), 0, 64000);
+        Processing.ApplyLevel(song, Options.LoudnessEven, 0);
+        Assert.InRange(Rms(song), -11.6, -10.4);
+    }
+
+    [Fact]
+    public void ApplyLevel_LoudMaster_IsNotTurnedDownToSixteen()
+    {
+        // This is the bug behind quiet music: loud songs were cut to -16 dB.
+        var song = Stereo(Loud(64000), 0, 64000);
+        Processing.ApplyLevel(song, Options.LoudnessEven, 0);
+        Assert.True(Rms(song) > -12.5, $"level was {Rms(song):0.0} dB");
+    }
+
+    [Theory]
+    [InlineData(-6)]
+    [InlineData(-3)]
+    [InlineData(3)]
+    [InlineData(6)]
+    public void ApplyLevel_SongVolume_ChangesTheLevelBySoMuch(int decibels)
+    {
+        var normal = Stereo(Tone(64000, 440, level: 2000), 0, 64000);
+        var changed = Stereo(Tone(64000, 440, level: 2000), 0, 64000);
+        Processing.ApplyLevel(normal, Options.LoudnessOff, 0);
+        Processing.ApplyLevel(changed, Options.LoudnessOff, decibels);
+        Assert.InRange(Rms(changed) - Rms(normal), decibels - 0.3, decibels + 0.3);
+    }
+
+    [Fact]
+    public void ApplyLevel_BigBoost_LimitsPeaksInsteadOfClipping()
+    {
+        var song = Stereo(Loud(64000), 0, 64000);
+        Processing.ApplyLevel(song, Options.LoudnessEven, 9);
+        Assert.True(Peak(song) <= 32768 * 0.975, $"peak was {Peak(song)}");
+        Assert.DoesNotContain(song.Channels[0], s => s == short.MaxValue || s == short.MinValue);
+    }
+
+    [Fact]
+    public void ApplyLevel_Boost_IsLouderThanNoBoost()
+    {
+        var normal = Stereo(Loud(64000), 0, 64000);
+        var boosted = Stereo(Loud(64000), 0, 64000);
+        Processing.ApplyLevel(normal, Options.LoudnessEven, 0);
+        Processing.ApplyLevel(boosted, Options.LoudnessEven, 6);
+        Assert.True(Rms(boosted) > Rms(normal) + 1.5);
+    }
+
+    [Fact]
+    public void ApplyLevel_NoChangeNeeded_LeavesAudioAlone()
+    {
+        var song = Stereo(Tone(3200, 440), 0, 3200);
+        var before = (short[])song.Channels[0].Clone();
+        Processing.ApplyLevel(song, Options.LoudnessOff, 0);
+        Assert.Equal(before, song.Channels[0]);
     }
 
     [Fact]
@@ -361,7 +491,7 @@ public class BuildTests : IDisposable
         return PackBuilder.Build(new Options { PackName = "T" }, rows, _folder, m => { lock (_log) _log.Add(m); });
     }
 
-    private string Music(string name) => Path.Combine(_folder, "T", "RetroRewind6", "MyStuff", name + ".brstm");
+    private string Music(string name) => Path.Combine(_folder, "T", "RetroRewind6", "Patches", name + ".brstm");
 
     [Fact]
     public void Build_SameSongOnManyTracks_EncodesOnceAndCopies()
@@ -445,6 +575,42 @@ public class BuildTests : IDisposable
         Assert.Equal(32000, AudioIO.ReadBrstmSummary(Music("n_Farm_n")).Rate);
     }
 
+    [Theory]
+    [InlineData(Catalog.CatRetro, 0, 4)]
+    [InlineData(Catalog.CatRegs, 0, 4)]
+    [InlineData(Catalog.CatCustom, 0, 4)]
+    [InlineData(Catalog.CatBattle, 0, 4)]
+    [InlineData(Catalog.CatStock, 0, 4)]
+    [InlineData(Catalog.CatMenu, 0, 0)]
+    [InlineData(Catalog.CatFanfare, 0, 0)]
+    [InlineData(Catalog.CatRetro, 3, 7)]
+    [InlineData(Catalog.CatRetro, -6, -2)]
+    [InlineData(Catalog.CatRetro, 6, 9)]
+    [InlineData(Catalog.CatRetro, 9, 9)]
+    public void EffectiveVolume_RaceTracksGetABoost_WithACap(string category, int setting, double expected)
+    {
+        var row = new TrackRow { Category = category, VolumeDb = setting };
+        Assert.Equal(expected, PackBuilder.EffectiveVolumeDb(new Options(), row));
+    }
+
+    [Theory]
+    [InlineData(Options.LoudnessOff)]
+    [InlineData(Options.LoudnessPeak)]
+    public void EffectiveVolume_OtherModes_GetNoBoost(string loudness)
+    {
+        var row = new TrackRow { Category = Catalog.CatRetro, VolumeDb = 3 };
+        Assert.Equal(3, PackBuilder.EffectiveVolumeDb(new Options { Loudness = loudness }, row));
+    }
+
+    [Fact]
+    public void Build_RaceTrack_IsLouderThanAMenu_FromTheSameSong()
+    {
+        var race = new TrackRow { Name = "race", FileBase = "1_N", Source = _wav, Category = Catalog.CatRetro };
+        var menu = new TrackRow { Name = "menu", FileBase = "title_bg", Source = _wav, Category = Catalog.CatMenu };
+        Run(race, menu);
+        Assert.NotEqual(File.ReadAllBytes(Music("1_N")), File.ReadAllBytes(Music("title_bg")));
+    }
+
     [Fact]
     public void Project_SaveLoad_KeepsNewFields()
     {
@@ -473,6 +639,181 @@ public class BuildTests : IDisposable
         Project.Load(path).ApplyTo(fresh);
         Assert.Equal(LoopMode.WholeSong, fresh[0].Loop);
         Assert.Equal(0, fresh[0].VolumeDb);
+    }
+
+    [Fact]
+    public void CopyToPatches_CopiesSongs_LeavesOtherFilesAlone()
+    {
+        var result = Run(Row("1_N"));
+        string rr = Path.Combine(_folder, "rr");
+        string other = Path.Combine(rr, "Patches", "la_bike-fk.szs");
+        Directory.CreateDirectory(Path.GetDirectoryName(other)!);
+        File.WriteAllText(other, "kart");
+        Assert.Equal(1, PackBuilder.CopyToPatches(result.MusicFolder, rr));
+        Assert.True(File.Exists(Path.Combine(rr, "Patches", "1_N.brstm")));
+        Assert.Equal("kart", File.ReadAllText(other));
+    }
+
+    [Fact]
+    public void PatchesConflicts_OnlyDifferentFilesCount()
+    {
+        var result = Run(Row("1_N"), Row("2_N"));
+        string rr = Path.Combine(_folder, "rr");
+        Assert.Empty(PackBuilder.PatchesConflicts(result.MusicFolder, rr));
+        PackBuilder.CopyToPatches(result.MusicFolder, rr);
+        Assert.Empty(PackBuilder.PatchesConflicts(result.MusicFolder, rr));
+        File.WriteAllText(Path.Combine(rr, "Patches", "2_N.brstm"), "different");
+        Assert.Equal(["2_N.brstm"], PackBuilder.PatchesConflicts(result.MusicFolder, rr));
+    }
+
+    [Fact]
+    public void Build_PacksAreLaidOutForPatches_NotMyStuff()
+    {
+        var result = Run(Row("1_N"));
+        Assert.EndsWith(Path.Combine("RetroRewind6", "Patches"), result.MusicFolder);
+        using var zip = System.IO.Compression.ZipFile.OpenRead(result.ZipPath);
+        Assert.Contains(zip.Entries, e => e.FullName.Replace('\\', '/') == "RetroRewind6/Patches/1_N.brstm");
+        Assert.DoesNotContain(zip.Entries, e => e.FullName.Contains("MyStuff"));
+    }
+
+    [Fact]
+    public void Build_OldMyStuffPack_MovesToPatches_WithoutEncodingAgain()
+    {
+        var row = Row("1_N");
+        var first = Run(row);
+        string old = Path.Combine(_folder, "T", "RetroRewind6", "MyStuff");
+        Directory.Move(first.MusicFolder, old);
+
+        var second = Run(row);
+        Assert.Equal(1, second.Unchanged);
+        Assert.False(Directory.Exists(old));
+        Assert.True(File.Exists(Music("1_N")));
+    }
+
+    /// <summary>The same steps as Wheel Wizard's PrepareModsForLaunch: returns which mod's copy of a file reaches Patches.</summary>
+    private static string WinnerInWheelWizard(string mods, string fileName)
+    {
+        var ordered = Directory.GetDirectories(mods)
+            .Select(folder =>
+            {
+                string title = Path.GetFileName(folder);
+                string line = File.ReadAllLines(Path.Combine(folder, title + ".ini")).First(l => l.StartsWith("Priority"));
+                return (Title: title, Priority: int.Parse(line[(line.IndexOf('=') + 1)..].Trim()));
+            })
+            .OrderBy(mod => mod.Priority)
+            .Reverse();
+        string winner = "";
+        foreach (var mod in ordered)
+            if (File.Exists(Path.Combine(mods, mod.Title, fileName)))
+                winner = mod.Title;
+        return winner;
+    }
+
+    private string OldMod(string mods, string title, int priority, string song)
+    {
+        string folder = Path.Combine(mods, title);
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, title + ".ini"), $"[Mod]\r\nName = {title}\r\nAuthor = -1\r\nModID = -1\r\nIsEnabled = True\r\nPriority = {priority}\r\n");
+        File.WriteAllText(Path.Combine(folder, song), "old music");
+        return folder;
+    }
+
+    [Fact]
+    public void InstallAsMod_OlderModHasSameSong_NewPackWins()
+    {
+        var result = Run(Row("title_bg"));
+        string mods = Path.Combine(_folder, "mods");
+        OldMod(mods, "e", 1, "la_bike-fk.szs");
+        OldMod(mods, "music", 2, "title_bg.brstm");
+
+        PackBuilder.InstallAsMod(result.MusicFolder, "T", "", mods);
+
+        Assert.Equal("T", WinnerInWheelWizard(mods, "title_bg.brstm"));
+        Assert.Equal(["music"], PackBuilder.ModsSharingSongs(result.MusicFolder, "T", mods));
+    }
+
+    [Fact]
+    public void InstallAsMod_InstalledAgain_StillWinsAndKeepsOneMod()
+    {
+        var result = Run(Row("title_bg"));
+        string mods = Path.Combine(_folder, "mods");
+        OldMod(mods, "music", 2, "title_bg.brstm");
+        PackBuilder.InstallAsMod(result.MusicFolder, "T", "", mods);
+        PackBuilder.InstallAsMod(result.MusicFolder, "T", "", mods);
+        Assert.Equal("T", WinnerInWheelWizard(mods, "title_bg.brstm"));
+        Assert.Equal(2, Directory.GetDirectories(mods).Length);
+    }
+
+    [Fact]
+    public void InstallAsMod_NoSharedSongs_LeavesPriorityAlone()
+    {
+        var result = Run(Row("1_N"));
+        string mods = Path.Combine(_folder, "mods");
+        OldMod(mods, "e", 1, "la_bike-fk.szs");
+        string folder = PackBuilder.InstallAsMod(result.MusicFolder, "T", "", mods);
+        Assert.Contains("Priority = 2", File.ReadAllText(Path.Combine(folder, "T.ini")));
+    }
+
+    [Fact]
+    public void InstallAsMod_ClearsThePacksSongsOutOfTheKeptMod()
+    {
+        var result = Run(Row("title_bg"));
+        string mods = Path.Combine(_folder, "mods");
+        string kept = OldMod(mods, "Kept Patches files", 3, "title_bg.brstm");
+        File.WriteAllText(Path.Combine(kept, "la_bike-fk.szs"), "kart");
+
+        PackBuilder.InstallAsMod(result.MusicFolder, "T", "", mods);
+
+        Assert.False(File.Exists(Path.Combine(kept, "title_bg.brstm")));
+        Assert.True(File.Exists(Path.Combine(kept, "la_bike-fk.szs")));
+    }
+
+    [Fact]
+    public void InstallAsMod_KeptModLeftEmpty_IsRemoved()
+    {
+        var result = Run(Row("title_bg"));
+        string mods = Path.Combine(_folder, "mods");
+        string kept = OldMod(mods, "Kept Patches files", 3, "title_bg.brstm");
+        PackBuilder.InstallAsMod(result.MusicFolder, "T", "", mods);
+        Assert.False(Directory.Exists(kept));
+    }
+
+    [Fact]
+    public void FindUnownedPatches_PacksOwnSongs_AreNotAtRisk()
+    {
+        string rr = Path.Combine(_folder, "rr");
+        string patches = Path.Combine(rr, "Patches");
+        Directory.CreateDirectory(patches);
+        File.WriteAllText(Path.Combine(patches, "title_bg.brstm"), "song");
+        File.WriteAllText(Path.Combine(patches, "la_bike-fk.szs"), "kart");
+
+        var loose = PackBuilder.FindUnownedPatches(rr, [Path.Combine(_folder, "nomods")], ["x/title_bg.brstm"]);
+
+        Assert.Equal("la_bike-fk.szs", Path.GetFileName(Assert.Single(loose)));
+    }
+
+    [Fact]
+    public void ModsFolders_TestOverride_IsTheOnlyTarget()
+    {
+        Environment.SetEnvironmentVariable("RRMUSIC_MODS", _folder);
+        try
+        {
+            Assert.Equal([_folder], PackBuilder.ModsFolders());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("RRMUSIC_MODS", null);
+        }
+    }
+
+    [Fact]
+    public void Build_EveryTrackFails_LeavesNoZip()
+    {
+        var bad = Row("1_N");
+        bad.Source = Path.Combine(_folder, "gone.mp3");
+        var result = Run(bad);
+        Assert.Equal(0, result.Built);
+        Assert.False(File.Exists(result.ZipPath));
     }
 
     [Fact]

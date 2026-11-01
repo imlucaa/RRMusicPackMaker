@@ -15,11 +15,11 @@ public sealed class LoopEditorForm : Form
     private readonly SideList _candidates = new() { Dock = DockStyle.Fill, Tag = Theme.PanelTag };
     private readonly FlatCombo _crossfade = new() { Width = 150 };
     private readonly Label _status = new() { AutoSize = false, Height = 26, Dock = DockStyle.Bottom, Tag = Theme.MutedTag, Padding = new Padding(14, 0, 14, 6) };
-    private readonly Button _find = Make("Find loops");
-    private readonly Button _snap = Make("Snap end to best match");
-    private readonly Button _playJump = Make("▶  Play the jump", Theme.AccentTag);
-    private readonly Button _playCursor = Make("▶  Play from cursor");
-    private readonly Button _stop = Make("■  Stop");
+    private readonly ModernButton _find = Make("Find loops");
+    private readonly ModernButton _snap = Make("Snap end to best match");
+    private readonly ModernButton _playJump = Make("▶  Play the jump", Theme.AccentTag);
+    private readonly ModernButton _playCursor = Make("▶  Play from cursor");
+    private readonly ModernButton _stop = Make("■  Stop");
 
     private short[][] _channels = [];
     private short[] _mono = [];
@@ -36,14 +36,14 @@ public sealed class LoopEditorForm : Form
         Height = 700;
         MinimumSize = new Size(820, 560);
         StartPosition = FormStartPosition.CenterParent;
-        Font = new Font("Segoe UI", 9.5f);
+        Font = Theme.UiFont();
         BuildLayout();
         Theme.Apply(this);
         Shown += async (_, _) => await LoadAudioAsync();
         FormClosed += (_, _) => CleanUpPreview();
     }
 
-    private static Button Make(string text, string tag = "") =>
+    private static ModernButton Make(string text, string tag = "") =>
         new() { Text = text, AutoSize = true, Height = 32, Padding = new Padding(8, 2, 8, 2), Margin = new Padding(0, 0, 6, 0), Tag = tag };
 
     private void BuildLayout()
@@ -146,7 +146,7 @@ public sealed class LoopEditorForm : Form
         for (int i = 0; i < steps.Length; i++)
         {
             int delta = steps[i].Delta;
-            var button = new Button { Text = steps[i].Text, Width = 64, Height = 30, Margin = new Padding(0, 1, 4, 3), Font = new Font(Font.FontFamily, 8.5f) };
+            var button = new ModernButton { Text = steps[i].Text, Width = 64, Height = 30, Margin = new Padding(0, 1, 4, 3) };
             button.Click += (_, _) => nudge(delta);
             table.Controls.Add(button, 2 + i, row);
         }
@@ -155,8 +155,9 @@ public sealed class LoopEditorForm : Form
     private void SetEnabled(bool enabled)
     {
         foreach (var button in new[] { _find, _snap, _playJump, _playCursor, _stop })
+        {
             button.Enabled = enabled;
-        Theme.Apply(_playJump);
+        }
     }
 
     internal async Task LoadAudioAsync()

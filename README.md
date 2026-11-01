@@ -4,22 +4,31 @@ A Windows app for making custom music packs for [Retro Rewind](https://mkwiiki.o
 
 ## Features
 
-- Lists every music slot in your Retro Rewind install: tracks, battle arenas, menus and fanfares
+- Lists every music slot in your Retro Rewind install, sorted into Regs, Retros, CTs, battle arenas, menus and fanfares, with a filter by console
 - Converts almost any audio format to BRSTM, including MP3, FLAC, OGG, WAV and M4A
 - Loop editor with a waveform, draggable markers and instant replay of the jump
 - Loop finder, plus a crossfade for songs that have no clean loop
 - Assign one song to many tracks, or spread a folder of songs across them
-- Find songs online or paste a link, using yt-dlp
+- Find official songs on YouTube Music, or paste a link
 - Even volume across songs, and per-song volume
 - Dark and light themes, autosave, and rebuilds that only re-encode what changed
-- Exports a zip and a credits file, and can add the pack to Wheel Wizard as a mod
+- One click exports the pack and adds it to the Patches folder and to Wheel Wizard and Wheel Wizard+
+- Even volume across songs, louder on race tracks because the game's race mix turns music down, with clean per-song boost or cut
+- Exports a zip for real Wii, Dolphin or sharing, with install steps and credits inside
 
 ## Requirements
 
 - Windows 10 or 11
 - [.NET 9 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/9.0)
-- [FFmpeg](https://ffmpeg.org/) (`ffmpeg.exe` and `ffprobe.exe`), on your PATH or next to the app
-- Optional: yt-dlp, which the app installs the first time you use online search
+
+The app installs these for you when needed, with their checksums verified:
+
+- [FFmpeg](https://ffmpeg.org/), offered on first launch if it's missing, or from **Settings**. It's a 190 MB download and takes about 340 MB of space. If you already have it on your PATH, the app uses that.
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp), the first time you download a song
+
+## Download
+
+Get `RRMusicPackMaker.exe` from [Releases](https://github.com/imlucaa/RRMusicPackMaker/releases). There's no installer, so run it from any folder you can write to.
 
 ## Build
 
@@ -42,12 +51,21 @@ dotnet test Tests
 1. Open the app. It finds your Retro Rewind install, or you can pick it in **Settings**.
 2. Drag a song onto a track, or select a track and click **Choose song**.
 3. Click **Edit loop** to set the loop, and listen to the jump.
-4. Click **Build pack**.
-5. Click **Add to Wheel Wizard**.
+4. Click **Export pack and add to Patches**. This does three things:
+   - Saves the pack as a zip in `Documents\RR Music Packs`.
+   - Copies its songs to `RetroRewind6/Patches`.
+   - Adds it as a mod if you have Wheel Wizard or Wheel Wizard+, so it shows in Mods and stays in `Patches`.
+5. Restart Wheel Wizard if it's open.
 
-For Riivolution or a real Wii without Wheel Wizard, copy the pack's `RetroRewind6` folder over, then set the **My Stuff** option to **RR Music**.
+**Real Wii, Dolphin or sharing:** click **Show exported pack** to find the zip. Its README explains how to install it. On a real Wii, its `RetroRewind6` folder goes on the root of the SD card.
 
 **No sound in game?** Check that the Music setting in Retro Rewind isn't set to disable music.
+
+**Music too quiet?** Check Dolphin's volume under Config > Audio, then raise the song's **Volume**.
+
+**Why songs get louder after installing:** the game caps each music slot with a volume stored in `revo_kart.brsar`, some as low as 51 out of 127. The app makes a copy from your own game file with the race and battle music raised to full scale, and adds it to `Patches`. It needs DolphinTool, which comes with Dolphin, and your game file. It's Nintendo's data, so it's never put in an exported pack. Turn it off in **Settings**.
+
+**Old music still plays?** Check that the Loose Archive Overrides setting is on. It's on by default.
 
 ## Copyright
 

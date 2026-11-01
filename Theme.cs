@@ -33,43 +33,83 @@ public static class Theme
 
     public static readonly Palette Light = new(
         false,
-        Color.FromArgb(247, 247, 249),
         Color.White,
+        Color.FromArgb(249, 249, 249),
         Color.White,
-        Color.FromArgb(222, 224, 230),
-        Color.FromArgb(28, 30, 36),
-        Color.FromArgb(108, 113, 125),
-        Color.FromArgb(37, 99, 235),
-        Color.FromArgb(29, 78, 216),
+        Color.FromArgb(229, 229, 229),
+        Color.Black,
+        Color.FromArgb(112, 112, 112),
+        Color.Black,
+        Color.FromArgb(48, 48, 48),
         Color.White,
-        Color.FromArgb(226, 235, 254),
-        Color.FromArgb(28, 30, 36),
-        Color.FromArgb(21, 128, 61),
-        Color.FromArgb(200, 40, 40),
-        Color.FromArgb(120, 130, 150),
-        Color.FromArgb(205, 221, 253));
+        Color.FromArgb(235, 235, 235),
+        Color.Black,
+        Color.Black,
+        Color.FromArgb(200, 30, 30),
+        Color.FromArgb(120, 120, 120),
+        Color.FromArgb(226, 226, 226));
 
     public static readonly Palette Dark = new(
         true,
-        Color.FromArgb(24, 25, 29),
-        Color.FromArgb(32, 33, 38),
-        Color.FromArgb(43, 45, 51),
-        Color.FromArgb(58, 60, 68),
-        Color.FromArgb(235, 236, 240),
-        Color.FromArgb(155, 159, 170),
-        Color.FromArgb(79, 134, 247),
-        Color.FromArgb(100, 150, 250),
+        Color.Black,
+        Color.FromArgb(12, 12, 12),
+        Color.FromArgb(24, 24, 24),
+        Color.FromArgb(36, 36, 36),
         Color.White,
-        Color.FromArgb(44, 62, 102),
-        Color.FromArgb(240, 242, 248),
-        Color.FromArgb(74, 200, 122),
-        Color.FromArgb(240, 100, 100),
-        Color.FromArgb(135, 142, 160),
-        Color.FromArgb(40, 58, 98));
+        Color.FromArgb(140, 140, 140),
+        Color.White,
+        Color.FromArgb(214, 214, 214),
+        Color.Black,
+        Color.FromArgb(34, 34, 34),
+        Color.White,
+        Color.White,
+        Color.FromArgb(255, 95, 95),
+        Color.FromArgb(150, 150, 150),
+        Color.FromArgb(38, 38, 38));
 
     public static Palette Current { get; private set; } = Light;
 
     public static event Action? Changed;
+
+    private const int CornerRadius = 7;
+
+    public static GraphicsPath Rounded(Rectangle area, int radius = CornerRadius)
+    {
+        int d = radius * 2;
+        var path = new GraphicsPath();
+        path.AddArc(area.X, area.Y, d, d, 180, 90);
+        path.AddArc(area.Right - d, area.Y, d, d, 270, 90);
+        path.AddArc(area.Right - d, area.Bottom - d, d, d, 0, 90);
+        path.AddArc(area.X, area.Bottom - d, d, d, 90, 90);
+        path.CloseFigure();
+        return path;
+    }
+
+    /// <summary>Paints the rounded box that buttons, fields and lists all share.</summary>
+    public static void FillBox(Graphics g, Rectangle area, Color fill, Color? border = null, int radius = CornerRadius)
+    {
+        var smoothing = g.SmoothingMode;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        using var path = Rounded(new Rectangle(area.X, area.Y, area.Width - 1, area.Height - 1), radius);
+        using (var brush = new SolidBrush(fill))
+            g.FillPath(brush, path);
+        if (border != null)
+        {
+            using var pen = new Pen(border.Value);
+            g.DrawPath(pen, path);
+        }
+        g.SmoothingMode = smoothing;
+    }
+
+    private static readonly Lazy<string> TextFontName = new(() =>
+    {
+        using var font = new Font("Segoe UI Variable Text", 9.5f);
+        return font.Name == "Segoe UI Variable Text" ? font.Name : "Segoe UI";
+    });
+
+    /// <summary>The Windows 11 font where it exists, otherwise Segoe UI.</summary>
+    public static Font UiFont(float size = 9.5f) => new(TextFontName.Value, size);
+    public static Font TitleFont(float size = 13f) => new("Segoe UI Semibold", size);
 
     public static void Set(bool dark)
     {
@@ -110,6 +150,14 @@ public static class Theme
         {
             int dark = Current.IsDark ? 1 : 0;
             DwmSetWindowAttribute(form.Handle, 20, ref dark, sizeof(int));
+
+            // Windows 11 can match the title bar and border exactly. Windows 10 ignores these.
+            int caption = ColorTranslator.ToWin32(Current.Window);
+            int border = ColorTranslator.ToWin32(Current.Border);
+            int title = ColorTranslator.ToWin32(Current.Text);
+            DwmSetWindowAttribute(form.Handle, 35, ref caption, sizeof(int));
+            DwmSetWindowAttribute(form.Handle, 34, ref border, sizeof(int));
+            DwmSetWindowAttribute(form.Handle, 36, ref title, sizeof(int));
         }
 
         if (form.IsHandleCreated)
@@ -130,26 +178,11 @@ public static class Theme
                 ThemeTitleBar(form);
                 break;
             case Button button:
-                button.FlatStyle = FlatStyle.Flat;
-                button.UseVisualStyleBackColor = false;
-                if (tag == AccentTag)
-                {
-                    button.BackColor = button.Enabled ? p.Accent : p.Raised;
-                    button.ForeColor = button.Enabled ? p.OnAccent : p.Muted;
-                    button.FlatAppearance.BorderSize = button.Enabled ? 0 : 1;
-                    button.FlatAppearance.BorderColor = p.Border;
-                    button.FlatAppearance.MouseOverBackColor = p.AccentHover;
-                    button.FlatAppearance.MouseDownBackColor = p.Accent;
-                }
-                else
-                {
-                    button.BackColor = p.Raised;
-                    button.ForeColor = button.Enabled ? p.Text : p.Muted;
-                    button.FlatAppearance.BorderSize = 1;
-                    button.FlatAppearance.BorderColor = p.Border;
-                    button.FlatAppearance.MouseOverBackColor = p.Selection;
-                    button.FlatAppearance.MouseDownBackColor = p.Selection;
-                }
+                button.Invalidate();
+                break;
+            case Panel { AutoScroll: true } scroller:
+                scroller.BackColor = tag == PanelTag ? p.Panel : p.Window;
+                ThemeNative(scroller, "DarkMode_Explorer");
                 break;
             case Label label:
                 label.BackColor = Color.Transparent;
@@ -169,13 +202,13 @@ public static class Theme
             case FieldBox field:
                 field.BackColor = p.Raised;
                 field.ForeColor = p.Text;
+                field.Box.BackColor = p.Raised;
+                field.Box.ForeColor = p.Text;
                 field.Invalidate();
-                break;
+                return;
             case CheckBox check:
-                check.FlatStyle = FlatStyle.Flat;
                 check.ForeColor = p.Text;
-                check.BackColor = Color.Transparent;
-                check.FlatAppearance.BorderColor = p.Muted;
+                check.Invalidate();
                 break;
             case DataGridView grid:
                 ApplyGrid(grid);
@@ -207,10 +240,10 @@ public static class Theme
         var p = Current;
         grid.BorderStyle = BorderStyle.None;
         grid.EnableHeadersVisualStyles = false;
-        grid.CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal;
+        grid.CellBorderStyle = DataGridViewCellBorderStyle.None;
         grid.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.None;
         grid.BackgroundColor = p.Panel;
-        grid.GridColor = p.Border;
+        grid.GridColor = p.Panel;
         var header = grid.ColumnHeadersDefaultCellStyle;
         header.BackColor = p.Panel;
         header.ForeColor = p.Muted;
@@ -238,8 +271,8 @@ public sealed class FieldBox : Panel
     public FieldBox(string placeholder = "")
     {
         Box.PlaceholderText = placeholder;
-        Padding = new Padding(8, 7, 8, 5);
-        Height = 32;
+        Padding = new Padding(10, 8, 10, 5);
+        Height = 34;
         DoubleBuffered = true;
         Controls.Add(Box);
         Box.GotFocus += (_, _) => Invalidate();
@@ -248,9 +281,14 @@ public sealed class FieldBox : Panel
 
     protected override void OnPaint(PaintEventArgs e)
     {
-        base.OnPaint(e);
-        using var pen = new Pen(Box.Focused ? Theme.Current.Accent : Theme.Current.Border);
-        e.Graphics.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
+        var p = Theme.Current;
+        e.Graphics.Clear(Parent?.BackColor ?? p.Window);
+        Theme.FillBox(e.Graphics, ClientRectangle, p.Raised, Box.Focused ? p.Accent : p.Border);
+    }
+
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {
+        // OnPaint covers the whole control, and painting twice would flicker.
     }
 }
 
@@ -290,9 +328,10 @@ public sealed class FlatCombo : ComboBox
         var p = Theme.Current;
         using var g = Graphics.FromHwnd(Handle);
         var bounds = new Rectangle(0, 0, Width, Height);
-        using (var back = new SolidBrush(p.Raised))
+        using (var back = new SolidBrush(Parent?.BackColor ?? p.Window))
             g.FillRectangle(back, bounds);
-        var textBounds = new Rectangle(8, 0, Width - 30, Height);
+        Theme.FillBox(g, bounds, p.Raised, Focused ? p.Accent : p.Border);
+        var textBounds = new Rectangle(10, 0, Width - 34, Height);
         TextRenderer.DrawText(g, Text, Font, textBounds, Enabled ? p.Text : p.Muted,
             TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
 
@@ -301,8 +340,6 @@ public sealed class FlatCombo : ComboBox
         using (var arrow = new Pen(p.Muted, 1.5f))
             g.DrawLines(arrow, new[] { new PointF(x - 4, y - 2), new PointF(x, y + 2), new PointF(x + 4, y - 2) });
         g.SmoothingMode = SmoothingMode.None;
-        using var border = new Pen(Focused ? p.Accent : p.Border);
-        g.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
     }
 
     protected override void OnGotFocus(EventArgs e)
@@ -315,6 +352,172 @@ public sealed class FlatCombo : ComboBox
     {
         base.OnLostFocus(e);
         Invalidate();
+    }
+}
+
+/// <summary>A rounded surface that groups related controls, the main building block of the window.</summary>
+public sealed class CardPanel : Panel
+{
+    private const int CardRadius = 12;
+
+    public CardPanel()
+    {
+        DoubleBuffered = true;
+        Tag = Theme.PanelTag;
+        Padding = new Padding(8);
+    }
+
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {
+        // OnPaint covers the whole control, and painting twice would flicker.
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var p = Theme.Current;
+        e.Graphics.Clear(Parent?.BackColor ?? p.Window);
+        Theme.FillBox(e.Graphics, ClientRectangle, p.Panel, p.Border, CardRadius);
+    }
+
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        Invalidate();
+    }
+}
+
+/// <summary>A rounded button that paints itself, so hover, pressed and disabled all stay readable in both themes.</summary>
+public class ModernButton : Button
+{
+    private bool _hover;
+    private bool _pressed;
+
+    /// <summary>Makes the ends fully round, for filter chips.</summary>
+    [Browsable(false)]
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool IsPill { get; set; }
+
+    public ModernButton()
+    {
+        FlatStyle = FlatStyle.Flat;
+        FlatAppearance.BorderSize = 0;
+        UseVisualStyleBackColor = false;
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+        Height = 34;
+    }
+
+    protected override void OnMouseEnter(EventArgs e)
+    {
+        _hover = true;
+        Invalidate();
+        base.OnMouseEnter(e);
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        _hover = false;
+        _pressed = false;
+        Invalidate();
+        base.OnMouseLeave(e);
+    }
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        _pressed = true;
+        Invalidate();
+        base.OnMouseDown(e);
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        _pressed = false;
+        Invalidate();
+        base.OnMouseUp(e);
+    }
+
+    protected override void OnEnabledChanged(EventArgs e)
+    {
+        Invalidate();
+        base.OnEnabledChanged(e);
+    }
+
+    public override Size GetPreferredSize(Size proposedSize)
+    {
+        var text = TextRenderer.MeasureText(Text, Font);
+        return new Size(text.Width + 30, Math.Max(Height, text.Height + 12));
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var p = Theme.Current;
+        var g = e.Graphics;
+        g.Clear(Parent?.BackColor ?? p.Window);
+        bool accent = Tag as string == Theme.AccentTag;
+        Color fill;
+        Color text;
+        Color? border = null;
+        if (!Enabled)
+        {
+            fill = p.Raised;
+            text = p.Muted;
+            border = p.Border;
+        }
+        else if (accent)
+        {
+            fill = _hover && !_pressed ? p.AccentHover : p.Accent;
+            text = p.OnAccent;
+        }
+        else
+        {
+            fill = _hover ? p.Selection : p.Raised;
+            text = p.Text;
+            border = p.Border;
+        }
+        if (IsPill)
+            Theme.FillBox(g, ClientRectangle, fill, border, Math.Max(1, Height / 2 - 1));
+        else
+            Theme.FillBox(g, ClientRectangle, fill, border);
+        TextRenderer.DrawText(g, Text, Font, ClientRectangle, text,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+    }
+}
+
+/// <summary>A check box drawn in the app's colors. The Windows one hides its tick in dark mode.</summary>
+public sealed class FlatCheck : CheckBox
+{
+    private const int BoxSize = 16;
+
+    public FlatCheck() => DoubleBuffered = true;
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var p = Theme.Current;
+        var g = e.Graphics;
+        g.Clear(Parent?.BackColor ?? p.Window);
+        int top = (Height - BoxSize) / 2;
+        var box = new Rectangle(0, top, BoxSize, BoxSize);
+        using (var fill = new SolidBrush(Checked ? p.Accent : p.Raised))
+            g.FillRectangle(fill, box);
+        if (Checked)
+        {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            using var tick = new Pen(p.OnAccent, 2f);
+            g.DrawLines(tick, new[] { new PointF(3.5f, top + 8.5f), new PointF(6.8f, top + 11.8f), new PointF(12.5f, top + 4.5f) });
+            g.SmoothingMode = SmoothingMode.None;
+        }
+        else
+        {
+            using var border = new Pen(p.Muted);
+            g.DrawRectangle(border, 0, top, BoxSize - 1, BoxSize - 1);
+        }
+        var text = new Rectangle(BoxSize + 6, 0, Width - BoxSize - 6, Height);
+        TextRenderer.DrawText(g, Text, Font, text, Enabled ? p.Text : p.Muted, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.NoPrefix);
+    }
+
+    public override Size GetPreferredSize(Size proposedSize)
+    {
+        var text = TextRenderer.MeasureText(Text, Font);
+        return new Size(BoxSize + 6 + text.Width + 2, Math.Max(BoxSize, text.Height) + 4);
     }
 }
 
@@ -345,13 +548,13 @@ public sealed class ThinProgress : Control
 
     public ThinProgress()
     {
-        Height = 3;
+        Height = 2;
         DoubleBuffered = true;
     }
 
     protected override void OnPaint(PaintEventArgs e)
     {
-        e.Graphics.Clear(Theme.Current.Border);
+        e.Graphics.Clear(Parent?.BackColor ?? Theme.Current.Window);
         using var brush = new SolidBrush(Theme.Current.Accent);
         e.Graphics.FillRectangle(brush, 0, 0, (float)(Width * _fraction), Height);
     }
@@ -384,7 +587,11 @@ public sealed class LoopThumb : Control
     {
         var p = Theme.Current;
         var g = e.Graphics;
-        g.Clear(p.Raised);
+        g.Clear(Parent?.BackColor ?? p.Window);
+        using var shape = Theme.Rounded(new Rectangle(0, 0, Width - 1, Height - 1));
+        using (var back = new SolidBrush(p.Raised))
+            g.FillPath(back, shape);
+        g.SetClip(shape);
         if (_hasLoop)
         {
             using var fill = new SolidBrush(p.LoopFill);
@@ -407,17 +614,29 @@ public sealed class LoopThumb : Control
             g.DrawLine(mark, (float)(_start * Width), 0, (float)(_start * Width), Height);
             g.DrawLine(mark, (float)(_end * Width) - 1, 0, (float)(_end * Width) - 1, Height);
         }
-        using var border = new Pen(p.Border);
-        g.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
+        g.ResetClip();
     }
 }
 
 /// <summary>Sidebar list drawn with roomy rows and a count on the right.</summary>
 public sealed class SideList : ListBox
 {
+    /// <summary>Marks a row as a section title, which can't be selected.</summary>
+    public const int HeaderCount = -2;
+
     public sealed record Item(string Name, int Count)
     {
+        public bool IsHeader => Count == HeaderCount;
         public override string ToString() => Name;
+    }
+
+    private readonly Font _headerFont = Theme.UiFont(8f);
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+            _headerFont.Dispose();
+        base.Dispose(disposing);
     }
 
     public SideList()
@@ -435,20 +654,23 @@ public sealed class SideList : ListBox
         var p = Theme.Current;
         bool selected = (e.State & DrawItemState.Selected) != 0;
         var g = e.Graphics;
-        using (var back = new SolidBrush(selected ? p.Selection : p.Panel))
+        using (var back = new SolidBrush(p.Panel))
             g.FillRectangle(back, e.Bounds);
-        if (selected)
+        if (item.IsHeader)
         {
-            using var bar = new SolidBrush(p.Accent);
-            g.FillRectangle(bar, e.Bounds.X, e.Bounds.Y + 6, 3, e.Bounds.Height - 12);
+            TextRenderer.DrawText(g, item.Name.ToUpperInvariant(), _headerFont, new Rectangle(e.Bounds.X + 18, e.Bounds.Y + 12, e.Bounds.Width - 20, e.Bounds.Height - 12), p.Muted,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            return;
         }
+        if (selected)
+            Theme.FillBox(g, new Rectangle(e.Bounds.X + 6, e.Bounds.Y + 2, e.Bounds.Width - 12, e.Bounds.Height - 4), p.Selection);
         int reserved = item.Count < 0 ? 20 : 58;
-        var nameBounds = new Rectangle(e.Bounds.X + 14, e.Bounds.Y, e.Bounds.Width - reserved, e.Bounds.Height);
+        var nameBounds = new Rectangle(e.Bounds.X + 18, e.Bounds.Y, e.Bounds.Width - reserved, e.Bounds.Height);
         TextRenderer.DrawText(g, item.Name, Font, nameBounds, selected ? p.SelectionText : p.Text,
             TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
         if (item.Count < 0)
             return;
-        var countBounds = new Rectangle(e.Bounds.Right - 50, e.Bounds.Y, 40, e.Bounds.Height);
+        var countBounds = new Rectangle(e.Bounds.Right - 56, e.Bounds.Y, 40, e.Bounds.Height);
         TextRenderer.DrawText(g, item.Count.ToString(), Font, countBounds, p.Muted,
             TextFormatFlags.VerticalCenter | TextFormatFlags.Right);
     }

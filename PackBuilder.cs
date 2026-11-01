@@ -103,6 +103,12 @@ public static class PackBuilder
 {
     private const double MaxShortSeconds = 15;
 
+    // Measured from a real race: music reaches the speakers about 8 dB lower than on the title screen,
+    // because the game's race mix turns it down. This wins back half of that without crushing the song.
+    private const double RaceBoostDb = 4;
+    private const double MaximumTotalBoostDb = 9;
+    private const string KeptModName = "Kept Patches files";
+
     public static readonly (string Text, double Seconds)[] CrossfadeChoices =
         [("Off: exact jump", 0), ("0.25 seconds", 0.25), ("0.5 seconds", 0.5), ("1 second", 1), ("2 seconds", 2)];
 
@@ -136,7 +142,17 @@ public static class PackBuilder
 
         string name = SafeName(options.PackName);
         string packFolder = Path.Combine(outputFolder, name);
-        string musicFolder = Path.Combine(packFolder, "RetroRewind6", "MyStuff");
+        string musicFolder = Path.Combine(packFolder, "RetroRewind6", "Patches");
+
+        // Packs built by older versions kept their songs in MyStuff. Reuse them, and keep that folder out of the zip.
+        string oldFolder = Path.Combine(packFolder, "RetroRewind6", "MyStuff");
+        if (Directory.Exists(oldFolder))
+        {
+            if (Directory.Exists(musicFolder))
+                Directory.Delete(oldFolder, true);
+            else
+                Directory.Move(oldFolder, musicFolder);
+        }
         Directory.CreateDirectory(musicFolder);
 
         string manifestPath = Path.Combine(outputFolder, name + ".build.json");
@@ -220,11 +236,14 @@ public static class PackBuilder
         WriteCredits(Path.Combine(packFolder, "credits.csv"), work);
         WriteReadme(Path.Combine(packFolder, "README.txt"), options, work);
 
+        // A zip with no music in it would only look like a finished pack.
         string zip = Path.Combine(outputFolder, name + ".zip");
         File.Delete(zip);
-        ZipFile.CreateFromDirectory(packFolder, zip, CompressionLevel.Fastest, false);
+        var music = Directory.GetFiles(musicFolder, "*.brstm");
+        if (music.Length > 0)
+            ZipFile.CreateFromDirectory(packFolder, zip, CompressionLevel.Fastest, false);
 
-        long bytes = Directory.GetFiles(musicFolder, "*.brstm").Sum(f => new FileInfo(f).Length);
+        long bytes = music.Sum(f => new FileInfo(f).Length);
         return new BuildResult(packFolder, musicFolder, zip, work.Count - failed, failed, bytes, unchanged, encoded);
     }
 
@@ -266,7 +285,7 @@ public static class PackBuilder
         }
 
         string text = string.Join("\n",
-            "3",
+            "5",
             Stamp(row.Source),
             Stamp(row.FinalSource),
             row.FixedRate ?? options.SampleRate,
@@ -275,7 +294,7 @@ public static class PackBuilder
             row.LoopStart,
             row.LoopEnd,
             row.Crossfade.ToString(CultureInfo.InvariantCulture),
-            row.VolumeDb,
+            EffectiveVolumeDb(options, row),
             options.Loudness,
             options.MultiChannelSlots ? row.StockChannels : 2,
             options.StockFinalLapFiles,
@@ -285,14 +304,23 @@ public static class PackBuilder
         return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(text)));
     }
 
+    /// <summary>The song's own volume setting, plus the race boost when the pack evens out its songs.</summary>
+    internal static double EffectiveVolumeDb(Options options, TrackRow row)
+    {
+        if (options.Loudness != Options.LoudnessEven || !row.IsRaceMusic)
+            return row.VolumeDb;
+        return Math.Min(row.VolumeDb + RaceBoostDb, Math.Max(row.VolumeDb, MaximumTotalBoostDb));
+    }
+
     private static void BuildRow(Options options, TrackRow row, string musicFolder, Action<string> log)
     {
+        double volume = EffectiveVolumeDb(options, row);
         if (!File.Exists(row.Source))
             throw new FileNotFoundException($"Song file not found: {row.Source}");
 
         int rate = row.FixedRate ?? options.SampleRate;
         var mode = row.Loop == LoopMode.Auto && row.DefaultNoLoop ? LoopMode.NoLoop : row.Loop;
-        var song = Processing.Prepare(row.Source, rate, mode, row.LoopStart, row.LoopEnd, options.Loudness, log, row.VolumeDb, row.Crossfade);
+        var song = Processing.Prepare(row.Source, rate, mode, row.LoopStart, row.LoopEnd, options.Loudness, log, volume, row.Crossfade);
 
         // The file stops at the loop end, so anything after it is not stored.
         double seconds = (song.Loop ? song.LoopEnd : song.Length) / (double)rate;
@@ -308,7 +336,7 @@ public static class PackBuilder
         {
             if (row.FinalSource.Length > 0)
             {
-                var final = Processing.Prepare(row.FinalSource, rate, LoopMode.Auto, "", "", options.Loudness, log, row.VolumeDb, row.Crossfade);
+                var final = Processing.Prepare(row.FinalSource, rate, LoopMode.Auto, "", "", options.Loudness, log, volume, row.Crossfade);
                 AudioIO.WriteBrstm(final, Path.Combine(musicFolder, row.StockFinalBase + ".brstm"), channels, rate);
             }
             else if (options.StockFinalLapFiles)
@@ -321,7 +349,7 @@ public static class PackBuilder
         // Retro Rewind speeds up the normal file by itself, so a final lap file is only for a different song.
         if (row.PulsarFinalBase != null && row.FinalSource.Length > 0)
         {
-            var final = Processing.Prepare(row.FinalSource, rate, LoopMode.Auto, "", "", options.Loudness, log, row.VolumeDb, row.Crossfade);
+            var final = Processing.Prepare(row.FinalSource, rate, LoopMode.Auto, "", "", options.Loudness, log, volume, row.Crossfade);
             AudioIO.WriteBrstm(final, Path.Combine(musicFolder, row.PulsarFinalBase + ".brstm"), 2, rate);
         }
 
@@ -371,9 +399,15 @@ public static class PackBuilder
             text.AppendLine($"By {options.Author}");
         text.AppendLine();
         text.AppendLine("INSTALL");
-        text.AppendLine("Copy the RetroRewind6 folder onto your SD card, or into your Dolphin Riivolution folder.");
-        text.AppendLine("Then set the Riivolution option My Stuff to RR Music.");
-        text.AppendLine("Wheel Wizard: add the .brstm files as a mod instead.");
+        text.AppendLine("Real Wii: copy the RetroRewind6 folder from this zip to the root of your SD card and merge it with the one there.");
+        text.AppendLine("The songs must end up in SD:/RetroRewind6/Patches.");
+        text.AppendLine();
+        text.AppendLine("Wheel Wizard or Wheel Wizard+: import this zip as a mod, then turn the mod on.");
+        text.AppendLine();
+        text.AppendLine("Dolphin with Riivolution: copy the RetroRewind6 folder into your Riivolution folder and merge it with the one there.");
+        text.AppendLine();
+        text.AppendLine("No sound? Check that Retro Rewind's Music setting isn't set to disable music.");
+        text.AppendLine("Old music still plays? Check that its Loose Archive Overrides setting is on, which is the default.");
         text.AppendLine();
         text.AppendLine("TRACKS");
         foreach (var row in rows)
@@ -381,25 +415,82 @@ public static class PackBuilder
         File.WriteAllText(path, text.ToString());
     }
 
-    /// <summary>Wheel Wizard's mods folder. Its data folder can be moved, and the registry then holds the new place.</summary>
-    public static string ModsFolder()
+    /// <summary>Songs that would replace a different file already in the Patches folder.</summary>
+    public static List<string> PatchesConflicts(string musicFolder, string retroRewindFolder)
     {
+        string target = Path.Combine(retroRewindFolder, "Patches");
+        var conflicts = new List<string>();
+        if (!Directory.Exists(target))
+            return conflicts;
+        foreach (string file in Directory.GetFiles(musicFolder, "*.brstm"))
+        {
+            var existing = new FileInfo(Path.Combine(target, Path.GetFileName(file)));
+            if (existing.Exists && existing.Length != new FileInfo(file).Length)
+                conflicts.Add(existing.Name);
+        }
+        return conflicts;
+    }
+
+    /// <summary>Copies the pack's songs into Patches. Other files there are left alone. Returns how many were copied.</summary>
+    public static int CopyToPatches(string musicFolder, string retroRewindFolder)
+    {
+        string target = Path.Combine(retroRewindFolder, "Patches");
+        Directory.CreateDirectory(target);
+        var files = Directory.GetFiles(musicFolder, "*.brstm");
+        foreach (string file in files)
+            File.Copy(file, Path.Combine(target, Path.GetFileName(file)), true);
+        return files.Length;
+    }
+
+    /// <summary>Other mods that replace any of the same songs as this pack.</summary>
+    public static List<string> ModsSharingSongs(string musicFolder, string packName, string modsFolder)
+    {
+        string name = SafeName(packName);
+        var songs = new HashSet<string>(Directory.GetFiles(musicFolder, "*.brstm").Select(f => Path.GetFileName(f)), StringComparer.OrdinalIgnoreCase);
+        var result = new List<string>();
+        if (!Directory.Exists(modsFolder))
+            return result;
+        foreach (string folder in Directory.GetDirectories(modsFolder))
+        {
+            string title = Path.GetFileName(folder);
+            if (!title.Equals(name, StringComparison.OrdinalIgnoreCase)
+                && Directory.GetFiles(folder, "*.brstm", SearchOption.AllDirectories).Any(f => songs.Contains(Path.GetFileName(f))))
+                result.Add(title);
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Every mods folder Wheel Wizard or Wheel Wizard+ may read. Both use the data folder saved in the
+    /// registry if it was moved, and older versions always use the default one, so both get the pack.
+    /// </summary>
+    public static List<string> ModsFolders()
+    {
+        if (Environment.GetEnvironmentVariable("RRMUSIC_MODS") is { Length: > 0 } custom)
+            return [custom];
+
+        var folders = new List<string>();
         using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\WheelWizard");
         if (key?.GetValue("AppDataLocation") is string moved && Directory.Exists(moved))
-            return Path.Combine(moved, "Mods");
-        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CT-MKWII", "Mods");
+            folders.Add(Path.Combine(moved, "Mods"));
+        string standard = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CT-MKWII");
+        if (Directory.Exists(standard))
+            folders.Add(Path.Combine(standard, "Mods"));
+        return folders.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     /// <summary>Files in the Patches folder that no mod owns. Wheel Wizard deletes these once any mod is enabled.</summary>
-    public static List<string> FindUnownedPatches(string retroRewindFolder, string modsFolder)
+    public static List<string> FindUnownedPatches(string retroRewindFolder, IEnumerable<string> modsFolders, IEnumerable<string>? packSongs = null)
     {
         string patches = Path.Combine(retroRewindFolder, "Patches");
         if (!Directory.Exists(patches))
             return [];
-        var owned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (Directory.Exists(modsFolder))
-            foreach (var file in Directory.GetFiles(modsFolder, "*", SearchOption.AllDirectories))
-                owned.Add(Path.GetFileName(file));
+        // The pack's own songs are about to be owned by its mod, so they aren't at risk.
+        var owned = new HashSet<string>(packSongs?.Select(song => Path.GetFileName(song)!) ?? [], StringComparer.OrdinalIgnoreCase);
+        foreach (string modsFolder in modsFolders)
+            if (Directory.Exists(modsFolder))
+                foreach (var file in Directory.GetFiles(modsFolder, "*", SearchOption.AllDirectories))
+                    owned.Add(Path.GetFileName(file));
         return Directory.GetFiles(patches).Where(f => !owned.Contains(Path.GetFileName(f))).ToList();
     }
 
@@ -407,20 +498,48 @@ public static class PackBuilder
     public static string InstallAsMod(string musicFolder, string packName, string author, string modsFolder, IEnumerable<string>? keepFiles = null)
     {
         string name = SafeName(packName);
-        string folder = WriteMod(modsFolder, name, author, 0);
+        string folder = WriteMod(modsFolder, name, author.Length > 0 ? author : "-1", 0);
         foreach (var old in Directory.GetFiles(folder, "*.brstm"))
             File.Delete(old);
         foreach (var file in Directory.GetFiles(musicFolder, "*.brstm"))
             File.Copy(file, Path.Combine(folder, Path.GetFileName(file)), true);
+        RemoveFromKeptMod(musicFolder, modsFolder);
+        WinOverSharedSongs(modsFolder, name, ModsSharingSongs(musicFolder, packName, modsFolder));
 
         var keep = keepFiles?.ToList() ?? [];
         if (keep.Count > 0)
         {
-            string keepFolder = WriteMod(modsFolder, "Kept Patches files", "", 1);
+            string keepFolder = WriteMod(modsFolder, KeptModName, "-1", 1);
             foreach (var file in keep)
                 File.Copy(file, Path.Combine(keepFolder, Path.GetFileName(file)), true);
         }
         return folder;
+    }
+
+    /// <summary>In Wheel Wizard the lowest priority number wins, so the pack must rank above mods with the same songs.</summary>
+    private static void WinOverSharedSongs(string modsFolder, string name, List<string> others)
+    {
+        if (others.Count == 0)
+            return;
+        string ini = Path.Combine(modsFolder, name, name + ".ini");
+        int mine = ReadPriority(ini) ?? 0;
+        int best = others.Select(other => ReadPriority(Path.Combine(modsFolder, other, other + ".ini")) ?? int.MaxValue).Min();
+        if (mine < best)
+            return;
+        var lines = File.ReadAllLines(ini).Select(line =>
+            line.StartsWith("Priority", StringComparison.OrdinalIgnoreCase) ? $"Priority = {best - 1}" : line);
+        File.WriteAllLines(ini, lines);
+    }
+
+    private static int? ReadPriority(string ini)
+    {
+        if (!File.Exists(ini))
+            return null;
+        foreach (string line in File.ReadAllLines(ini))
+            if (line.StartsWith("Priority", StringComparison.OrdinalIgnoreCase)
+                && int.TryParse(line[(line.IndexOf('=') + 1)..].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value))
+                return value;
+        return null;
     }
 
     private static string WriteMod(string modsFolder, string title, string author, int priorityOffset)
@@ -448,6 +567,19 @@ public static class PackBuilder
 
         File.WriteAllText(ini, $"[Mod]\r\nName = {title}\r\nAuthor = {author}\r\nModID = -1\r\nIsEnabled = True\r\nPriority = {priority}\r\n");
         return folder;
+    }
+
+    /// <summary>Older versions could save the pack's own songs in the kept mod, where stale copies linger. Clears them.</summary>
+    private static void RemoveFromKeptMod(string musicFolder, string modsFolder)
+    {
+        string kept = Path.Combine(modsFolder, KeptModName);
+        if (!Directory.Exists(kept))
+            return;
+        foreach (string song in Directory.GetFiles(musicFolder, "*.brstm"))
+            File.Delete(Path.Combine(kept, Path.GetFileName(song)));
+        string ini = KeptModName + ".ini";
+        if (Directory.GetFiles(kept).All(file => Path.GetFileName(file).Equals(ini, StringComparison.OrdinalIgnoreCase)))
+            Directory.Delete(kept, true);
     }
 
     private static readonly string[] AudioExtensions = [".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aac", ".opus", ".wma", ".brstm", ".webm", ".mp4"];

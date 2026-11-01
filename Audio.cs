@@ -23,19 +23,23 @@ public sealed class Song
 
 public static class Tools
 {
-    public static string Find(string exe)
+    public static string DataToolsFolder => Path.Combine(AppStorage.Folder, "tools");
+
+    public static string? TryFind(string exe)
     {
-        var dirs = new List<string> { AppContext.BaseDirectory };
+        var dirs = new List<string> { AppContext.BaseDirectory, DataToolsFolder };
         dirs.AddRange((Environment.GetEnvironmentVariable("PATH") ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries));
-        dirs.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Smoothie", "bin"));
         foreach (var dir in dirs)
         {
             string path = Path.Combine(dir.Trim('"'), exe + ".exe");
             if (File.Exists(path))
                 return path;
         }
-        throw new FileNotFoundException($"{exe}.exe was not found. Install FFmpeg, or put {exe}.exe next to this program.");
+        return null;
     }
+
+    public static string Find(string exe) =>
+        TryFind(exe) ?? throw new FileNotFoundException("FFmpeg isn't installed. Install it from Settings.");
 
     public static byte[] RunBinary(string exe, params string[] args)
     {
@@ -281,8 +285,13 @@ public static class AudioIO
 public static class Processing
 {
     private const double SilenceLevel = 33; // About -60 dBFS.
-    private const double EvenLoudnessRms = 0.16; // About -16 dBFS.
-    private const double PeakLimit = 0.944; // About -0.5 dBFS.
+    // Measured: Retro Rewind's own music averages about -12 dB, and its stock menu music plays
+    // at -20 dB in game where a -16 dB file plays at -25 dB. This level matches them.
+    private const double EvenLoudnessRms = 0.28; // About -11 dBFS.
+    private const double PeakLimit = 0.97; // About -0.3 dBFS.
+    private const double MaximumBoost = 16; // About +24 dB, so near-silent files don't turn into noise.
+    private const double LimiterAttackSeconds = 0.005;
+    private const double LimiterReleaseSeconds = 0.12;
 
     /// <summary>Turns a row's source and settings into audio ready to encode.</summary>
     public static Song Prepare(string source, int rate, LoopMode mode, string loopStart, string loopEnd, string loudness, Action<string>? log = null, double volumeDb = 0, double crossfadeSeconds = 0)
@@ -333,8 +342,7 @@ public static class Processing
 
         TrimSilence(song);
         ApplyCrossfade(song, crossfadeSeconds);
-        ApplyLoudness(song, loudness);
-        ApplyVolume(song, volumeDb);
+        ApplyLevel(song, loudness, volumeDb);
         return song;
     }
 
@@ -359,16 +367,6 @@ public static class Processing
                 channel[end - fade + i] = (short)Math.Clamp(Math.Round(mixed), short.MinValue, short.MaxValue);
             }
         song.LoopStart = start + fade;
-    }
-
-    public static void ApplyVolume(Song song, double decibels)
-    {
-        if (decibels == 0)
-            return;
-        double gain = Math.Pow(10, decibels / 20);
-        foreach (var channel in song.Channels)
-            for (int i = 0; i < channel.Length; i++)
-                channel[i] = (short)Math.Clamp(Math.Round(channel[i] * gain), short.MinValue, short.MaxValue);
     }
 
     private static void SetLoop(Song song, int start, int end)
@@ -415,10 +413,13 @@ public static class Processing
     private static bool IsSilent(Song song, int index) =>
         Math.Abs((int)song.Channels[0][index]) <= SilenceLevel && Math.Abs((int)song.Channels[1][index]) <= SilenceLevel;
 
-    private static void ApplyLoudness(Song song, string loudness)
+    /// <summary>
+    /// Sets the song's final level. Even loudness aims for the level Retro Rewind's own music sits at,
+    /// and the per-song volume is added on top. Peaks that would clip are turned down by a limiter,
+    /// so a boost stays clean instead of distorting.
+    /// </summary>
+    internal static void ApplyLevel(Song song, string loudness, double volumeDb)
     {
-        if (loudness == Options.LoudnessOff)
-            return;
         double peak = 0;
         double sum = 0;
         foreach (var channel in song.Channels)
@@ -430,14 +431,49 @@ public static class Processing
             }
         if (peak <= 0)
             return;
-        double rms = Math.Sqrt(sum / (song.Length * 2));
-        double gain = PeakLimit / peak;
-        if (loudness == Options.LoudnessEven)
-            gain = Math.Min(gain, EvenLoudnessRms / rms);
 
+        double rms = Math.Sqrt(sum / (song.Length * song.Channels.Length));
+        double gain = loudness switch
+        {
+            Options.LoudnessOff => 1,
+            Options.LoudnessPeak => PeakLimit / peak,
+            _ => Math.Min(EvenLoudnessRms / rms, MaximumBoost),
+        };
+        gain *= Math.Pow(10, volumeDb / 20);
+        if (gain == 1)
+            return;
+
+        float[]? reduction = peak * gain > PeakLimit ? LimiterGains(song, gain) : null;
         foreach (var channel in song.Channels)
             for (int i = 0; i < channel.Length; i++)
-                channel[i] = (short)Math.Clamp(Math.Round(channel[i] * gain), short.MinValue, short.MaxValue);
+            {
+                double value = channel[i] * gain * (reduction?[i] ?? 1);
+                channel[i] = (short)Math.Clamp(Math.Round(value), short.MinValue, short.MaxValue);
+            }
+    }
+
+    /// <summary>How much to turn each moment down so no peak passes the limit, easing in before it and out after it.</summary>
+    private static float[] LimiterGains(Song song, double gain)
+    {
+        int length = song.Length;
+        var gains = new float[length];
+        for (int i = 0; i < length; i++)
+        {
+            double level = 0;
+            foreach (var channel in song.Channels)
+                level = Math.Max(level, Math.Abs(channel[i] / 32768.0));
+            level *= gain;
+            gains[i] = level > PeakLimit ? (float)(PeakLimit / level) : 1f;
+        }
+
+        float attack = 1f / Math.Max(1, (int)(song.Rate * LimiterAttackSeconds));
+        for (int i = length - 2; i >= 0; i--)
+            gains[i] = Math.Min(gains[i], gains[i + 1] + attack);
+
+        float release = 1f / Math.Max(1, (int)(song.Rate * LimiterReleaseSeconds));
+        for (int i = 1; i < length; i++)
+            gains[i] = Math.Min(gains[i], gains[i - 1] + release);
+        return gains;
     }
 }
 

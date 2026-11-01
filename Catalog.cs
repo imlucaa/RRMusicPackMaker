@@ -8,6 +8,9 @@ public enum LoopMode { Auto, WholeSong, Custom, FindLoop, NoLoop }
 public sealed class TrackRow
 {
     public string Category { get; init; } = "";
+
+    /// <summary>The console a track comes from, like SNES or Wii U. Empty for custom tracks and game music.</summary>
+    public string Platform { get; init; } = "";
     public string Name { get; init; } = "";
 
     /// <summary>File name without extension, e.g. n_Circuit32_n or 104_N.</summary>
@@ -47,18 +50,90 @@ public sealed class TrackRow
     public int VolumeDb { get; set; }
 
     public bool IsAssigned => !string.IsNullOrWhiteSpace(Source);
+
+    /// <summary>Plays during a race or battle, where the game mixes music far below menu level.</summary>
+    public bool IsRaceMusic => Category is Catalog.CatRegs or Catalog.CatRetro or Catalog.CatCustom or Catalog.CatBattle or Catalog.CatStock or Catalog.CatStockBattle;
 }
 
 public static class Catalog
 {
-    private const string CatMenu = "Menus";
-    private const string CatFanfare = "Fanfares & jingles";
-    private const string CatStock = "Stock race music slots";
-    private const string CatStockBattle = "Stock battle music slots";
-    private const string CatRetro = "RR retro tracks";
-    private const string CatCustom = "RR custom tracks";
-    private const string CatBattle = "RR battle arenas";
-    private const string CatOther = "Other RR music files";
+    public const string CatMenu = "Menus";
+    public const string CatFanfare = "Fanfares & jingles";
+    public const string CatStock = "Stock race music";
+    public const string CatStockBattle = "Stock battle music";
+    public const string CatRegs = "Regs";
+    public const string CatRetro = "Retros";
+    public const string CatCustom = "CTs";
+    public const string CatBattle = "Battle arenas";
+    public const string CatOther = "Other music files";
+
+    /// <summary>How the sidebar is grouped, top to bottom.</summary>
+    public static readonly (string Title, string[] Categories)[] Groups =
+    [
+        ("Tracks", [CatRegs, CatRetro, CatCustom, CatBattle]),
+        ("Game music", [CatMenu, CatFanfare]),
+        ("Advanced", [CatStock, CatStockBattle, CatOther]),
+    ];
+
+    // Oldest console first. "Wii U" is listed before "Wii" in the lookup below so it matches first.
+    private static readonly string[] PlatformOrder = ["SNES", "N64", "GBA", "GCN", "DS", "Wii", "3DS", "Wii U", "Tour", "GP", "SW2", "SW", "RMX", "Beta"];
+    private static readonly string[] PlatformLookup = ["Wii U", "SNES", "N64", "GBA", "GCN", "DS", "Wii", "3DS", "Tour", "GP", "SW2", "SW", "RMX", "Beta"];
+
+    // The 32 tracks that came with Mario Kart Wii. A few are spelled differently across versions.
+    private static readonly HashSet<string> RegNames = new(new[]
+    {
+        "Wii Luigi Circuit", "Wii Moo Moo Meadows", "Wii Mushroom Gorge", "Wii Toad's Factory",
+        "Wii Mario Circuit", "Wii Coconut Mall", "Wii DK Summit", "Wii Wario's Gold Mine",
+        "Wii Daisy Circuit", "Wii Koopa Cape", "Wii Maple Treeway", "Wii Grumble Volcano",
+        "Wii Dry Dry Ruins", "Wii Moonview Highway", "Wii Bowser's Castle", "Wii Rainbow Road",
+        "GCN Peach Beach", "DS Yoshi Falls", "SNES Ghost Valley 2", "N64 Mario Raceway",
+        "N64 Sherbet Land", "GBA Shy Guy Beach", "DS Delfino Square", "GCN Waluigi Stadium",
+        "DS Desert Hills", "GBA Bowser Castle 3", "N64 DK's Jungle Parkway", "N64 DK Jungle Parkway",
+        "GCN Mario Circuit", "SNES Mario Circuit 3", "DS Peach Gardens", "DS Peach Garden",
+        "GCN DK Mountain", "N64 Bowser's Castle",
+    }.Select(NameKey));
+
+    private static string NameKey(string name) => new string(name.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
+
+    /// <summary>The track's own name, without any variant part.</summary>
+    internal static string MainName(string name)
+    {
+        int variant = name.IndexOf(" > ", StringComparison.Ordinal);
+        if (variant < 0)
+            variant = name.IndexOf(" (variant ", StringComparison.Ordinal);
+        return variant < 0 ? name : name[..variant];
+    }
+
+    internal static bool IsReg(string name) => RegNames.Contains(NameKey(MainName(name)));
+
+    internal static string PlatformOf(string name)
+    {
+        foreach (string platform in PlatformLookup)
+            if (name.StartsWith(platform + " ", StringComparison.Ordinal))
+                return platform;
+        return "";
+    }
+
+    public static int PlatformIndex(string platform)
+    {
+        int index = Array.IndexOf(PlatformOrder, platform);
+        return index < 0 ? PlatformOrder.Length : index;
+    }
+
+    /// <summary>Puts rows in sidebar order. Inside a group: by console, then name, with each track's variants right after it.</summary>
+    internal static List<TrackRow> Organize(IEnumerable<TrackRow> rows)
+    {
+        var categories = Groups.SelectMany(group => group.Categories).ToList();
+        var racing = new[] { CatRegs, CatRetro, CatCustom, CatBattle };
+        return rows
+            .Select((row, index) => (Row: row, Index: index))
+            .OrderBy(item => categories.IndexOf(item.Row.Category) is var at && at < 0 ? categories.Count : at)
+            .ThenBy(item => racing.Contains(item.Row.Category) ? PlatformIndex(item.Row.Platform) : 0)
+            .ThenBy(item => racing.Contains(item.Row.Category) ? MainName(item.Row.Name) : "", StringComparer.OrdinalIgnoreCase)
+            .ThenBy(item => item.Index)
+            .Select(item => item.Row)
+            .ToList();
+    }
 
     private sealed record StockSlot(int[] Slots, string Name, string File, int Channels = 2);
 
@@ -208,7 +283,8 @@ public static class Catalog
                 string final = FindExisting(strmFiles, track.FileStem + "_Final", track.FileStem + "_F") ?? track.FileStem + "_Final";
                 var row = new TrackRow
                 {
-                    Category = category,
+                    Category = category == CatRetro && IsReg(track.Name) ? CatRegs : category,
+                    Platform = PlatformOf(MainName(track.Name)),
                     Name = track.Name,
                     FileBase = stemN,
                     PulsarFinalBase = final,
@@ -241,7 +317,7 @@ public static class Catalog
         message = trackCount == 0
             ? $"No track list found in {Path.Combine(rrRoot, "Binaries")}. Showing stock slots only."
             : $"Loaded {trackCount} Retro Rewind track music slots.";
-        return rows;
+        return Organize(rows);
     }
 
     private static string? FindExisting(Dictionary<string, string> files, params string[] names)
@@ -280,6 +356,8 @@ public static class Catalog
     /// <summary>Finds Retro Rewind on this PC. Returns the first folder holding a track list.</summary>
     public static string? DetectRetroRewind()
     {
+        if (Environment.GetEnvironmentVariable("RRMUSIC_RR") is { Length: > 0 } custom)
+            return custom;
         string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         string docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
         string[] dolphinRoots = [Path.Combine(appData, "Dolphin Emulator"), Path.Combine(docs, "Dolphin Emulator")];

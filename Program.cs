@@ -10,6 +10,10 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        // Load the encoder now. A single-file app reads libraries from its exe on first use,
+        // so if the exe is replaced while the app is open, a late load fails partway through a build.
+        GC.KeepAlive(typeof(VGAudio.Containers.NintendoWare.BrstmWriter).Assembly);
+
         if (args.Length > 0)
         {
             AttachConsole(-1);
@@ -85,6 +89,10 @@ internal static class Program
             }
             case "build":
             {
+                // Lets a test replace the exe before the encoder runs.
+                if (Option(args, "--wait-for") is { } signal)
+                    while (!File.Exists(signal))
+                        Thread.Sleep(50);
                 var project = Project.Load(args[1]);
                 string rrRoot = project.Options.RetroRewindFolder.Length > 0
                     ? project.Options.RetroRewindFolder
@@ -112,12 +120,34 @@ internal static class Program
                 }
                 return 0;
             }
+            case "get-ffmpeg":
+            {
+                if (FfmpegInstaller.IsInstalled && !args.Contains("--force"))
+                {
+                    Console.WriteLine($"Already installed: {Tools.Find("ffmpeg")}");
+                    return 0;
+                }
+                double shown = 0;
+                string folder = FfmpegInstaller.InstallAsync(Console.WriteLine, fraction =>
+                {
+                    if (fraction >= shown + 0.25)
+                    {
+                        shown = fraction;
+                        Console.WriteLine($"{fraction:P0}");
+                    }
+                }, CancellationToken.None).GetAwaiter().GetResult();
+                Console.WriteLine($"Installed in {folder}");
+                return 0;
+            }
+            case "sound-archive":
+                Console.WriteLine(SoundArchive.Prepare(AppStorage.LoadSettings(), Console.WriteLine));
+                return 0;
             case "get-tool":
                 Console.WriteLine(Downloader.EnsureToolAsync(Console.WriteLine, CancellationToken.None).GetAwaiter().GetResult());
                 return 0;
             case "search":
                 foreach (var result in Downloader.SearchAsync(args[1], Console.WriteLine, CancellationToken.None).GetAwaiter().GetResult())
-                    Console.WriteLine($"{result.Link} | {result.Display}");
+                    Console.WriteLine($"{(result.Official ? "OFFICIAL" : "other")} | {result.Link} | {result.Display} | {result.Album} | {result.Plays}");
                 return 0;
             case "download":
             {
@@ -137,7 +167,8 @@ internal static class Program
                 return 0;
             }
             case "modsfolder":
-                Console.WriteLine(PackBuilder.ModsFolder());
+                foreach (string mods in PackBuilder.ModsFolders())
+                    Console.WriteLine(mods);
                 return 0;
             case "match":
             {
@@ -178,11 +209,43 @@ internal static class Program
                 form.StartPosition = FormStartPosition.Manual;
                 form.Location = new Point(-5000, -5000);
                 form.Show();
+                string? category = Option(args, "--category");
                 if (project != null)
-                    form.OpenProjectFile(project, showAssignedOnly: true);
+                    form.OpenProjectFile(project, showAssignedOnly: category == null);
+                if (category != null)
+                    form.SelectCategory(category);
                 Pump(600);
                 Capture(form, args[1]);
                 form.Close();
+                return 0;
+            }
+            case "screenshot-download":
+            {
+                ApplicationConfiguration.Initialize();
+                Theme.Set(Option(args, "--theme") == "dark");
+                using var download = new DownloadForm(Path.GetTempPath(), 1);
+                download.StartPosition = FormStartPosition.Manual;
+                download.Location = new Point(-5000, -5000);
+                download.Show();
+                download.SetQueryForTest(args[2]);
+                var search = download.GoAsync();
+                PumpUntil(() => search.IsCompleted);
+                Pump(300);
+                Capture(download, args[1]);
+                download.Close();
+                return 0;
+            }
+            case "screenshot-settings":
+            {
+                ApplicationConfiguration.Initialize();
+                Theme.Set(Option(args, "--theme") == "dark");
+                using var settings = new SettingsForm(new Options(), new AppSettings());
+                settings.StartPosition = FormStartPosition.Manual;
+                settings.Location = new Point(-5000, -5000);
+                settings.Show();
+                Pump(300);
+                Capture(settings, args[1]);
+                settings.Close();
                 return 0;
             }
             case "screenshot-editor":
