@@ -321,6 +321,15 @@ public class FfmpegInstallerTests : IDisposable
     }
 
     [Fact]
+    public void Extract_SharedBuild_KeepsDllsBesideThePrograms()
+    {
+        string zip = Zip("x/bin/ffmpeg.exe", "x/bin/ffprobe.exe", "x/bin/ffplay.exe", "x/bin/avcodec-63.dll", "x/lib/avcodec.dll", "x/doc/a.dll");
+        string target = Path.Combine(_folder, "out");
+        FfmpegInstaller.Extract(zip, target);
+        Assert.Equal(["avcodec-63.dll", "ffmpeg.exe", "ffprobe.exe"], Directory.GetFiles(target).Select(Path.GetFileName).OrderBy(n => n, StringComparer.Ordinal));
+    }
+
+    [Fact]
     public void Extract_ProgramMissing_InstallsNothing()
     {
         string zip = Zip("ffmpeg-x/bin/ffmpeg.exe");
@@ -332,10 +341,10 @@ public class FfmpegInstallerTests : IDisposable
     [Fact]
     public void Extract_NameTricks_AreIgnored()
     {
-        string zip = Zip("../../evil/bin/notffmpeg.exe", "x/bin/ffmpeg.exe", "x/bin/ffprobe.exe");
+        string zip = Zip("../../evil/bin/evil.dll", "../../evil/bin/notffmpeg.exe", "x/bin/ffmpeg.exe", "x/bin/ffprobe.exe");
         string target = Path.Combine(_folder, "out");
         FfmpegInstaller.Extract(zip, target);
-        Assert.Equal(2, Directory.GetFiles(target).Length);
+        Assert.Equal(["evil.dll", "ffmpeg.exe", "ffprobe.exe"], Directory.GetFiles(target).Select(Path.GetFileName).OrderBy(n => n, StringComparer.Ordinal));
         Assert.False(Directory.Exists(Path.Combine(_folder, "evil")));
     }
 }

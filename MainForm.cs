@@ -40,6 +40,20 @@ public sealed class MainForm : Form
     private readonly ModernButton _build = new() { Text = "Export pack and add to Patches", Tag = Theme.AccentTag, AutoSize = true, Height = 34, Padding = new Padding(14, 2, 14, 2), Margin = new Padding(6, 0, 0, 0) };
     private readonly ModernButton _openFolder = Footer("Show exported pack");
     private readonly ModernButton _logButton = Footer("Activity");
+    private readonly ModernButton _updateButton = Footer("Update available");
+    private readonly NoticeBar _notice = new() { Dock = DockStyle.Fill };
+    private readonly Panel _noticeHolder = new() { Dock = DockStyle.Top, Visible = false, Padding = new Padding(12, 0, 12, 10) };
+    private readonly ModernButton _hearCurrent = new() { Text = "▶  Hear current music", Height = 32, Dock = DockStyle.Fill, Margin = new Padding(0, 8, 0, 0) };
+    private readonly ComboBox _manyLoop = new FlatCombo { Width = 310, Margin = new Padding(0, 0, 0, 4) };
+    private readonly ComboBox _manyFade = new FlatCombo { Width = 310, Margin = new Padding(0, 0, 0, 4) };
+    private readonly ComboBox _manyVolume = new FlatCombo { Width = 310, Margin = new Padding(0, 0, 0, 8) };
+    private static readonly LoopMode[] BulkLoopModes = [LoopMode.Auto, LoopMode.WholeSong, LoopMode.FindLoop, LoopMode.NoLoop];
+    private const string NoChange = "Keep as they are";
+    private readonly HashSet<TrackRow> _missing = [];
+    private readonly Dictionary<string, double> _seconds = new(StringComparer.OrdinalIgnoreCase);
+    private long _sizeEstimate;
+    private string? _previewFile;
+    private DateTime _lastCheck = DateTime.MinValue;
     private readonly Label _status = new() { AutoSize = true, Tag = Theme.MutedTag, Margin = new Padding(14, 9, 0, 0) };
     private readonly ThinProgress _progress = new() { Dock = DockStyle.Bottom };
     private readonly Panel _logPanel = new() { Dock = DockStyle.Bottom, Height = 160, Visible = false };
@@ -96,6 +110,9 @@ public sealed class MainForm : Form
 
         FormClosing += (_, _) => SaveNow();
         Shown += async (_, _) => await OfferFfmpegAsync();
+        Shown += async (_, _) => await CheckForUpdateAsync();
+        Activated += (_, _) => RunChecks(force: false);
+        RunChecks(force: true);
     }
 
     /// <summary>The app can't convert songs without FFmpeg, so offer it on launch rather than failing on the first build.</summary>
@@ -105,7 +122,7 @@ public sealed class MainForm : Form
         if (FfmpegInstaller.IsInstalled || Environment.GetEnvironmentVariable("RRMUSIC_DATA") != null)
             return;
         var answer = MessageBox.Show(this,
-            "FFmpeg is needed to convert songs, and it isn't on this PC.\r\n\r\nDownload it now? It's a 190 MB download and takes about 340 MB of space.\r\n\r\nYou can also do this later from Settings.",
+            "FFmpeg is needed to convert songs, and it isn't on this PC.\r\n\r\nDownload it now? It's a 77 MB download and takes about 150 MB of space.\r\n\r\nYou can also do this later from Settings.",
             "Install FFmpeg", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
         if (answer == DialogResult.Yes)
             await InstallFfmpegAsync();
@@ -144,6 +161,40 @@ public sealed class MainForm : Form
         }
     }
 
+    private async Task CheckForUpdateAsync()
+    {
+        // RRMUSIC_DATA means an automated run, which shouldn't touch the network.
+        if (!_settings.CheckForUpdates || Environment.GetEnvironmentVariable("RRMUSIC_DATA") != null)
+            return;
+        string? tag = await UpdateCheck.FindNewerAsync();
+        if (tag == null || IsDisposed)
+            return;
+        _updateButton.Text = $"Update to {tag}";
+        _updateButton.Visible = true;
+    }
+
+    /// <summary>Looks for setup problems and missing songs. Runs when the window regains focus, because that's when they get fixed.</summary>
+    private void RunChecks(bool force)
+    {
+        if (!force && DateTime.UtcNow - _lastCheck < TimeSpan.FromSeconds(2))
+            return;
+        _lastCheck = DateTime.UtcNow;
+
+        var issues = SetupCheck.Run(_options.RetroRewindFolder);
+        _notice.Text = string.Join(Environment.NewLine, issues);
+        _noticeHolder.Height = 18 + Math.Max(1, issues.Count) * 22 + 10;
+        _noticeHolder.Visible = issues.Count > 0;
+
+        int before = _missing.Count;
+        _missing.Clear();
+        foreach (var row in _rows.Where(r => r.IsAssigned && !File.Exists(r.Source)))
+            _missing.Add(row);
+        if (before != _missing.Count)
+            ShowDetails();
+        _grid.Invalidate();
+        UpdateSummary();
+    }
+
     private static ModernButton Header(string text) => new() { Text = text, AutoSize = true, Height = 32, Margin = new Padding(6, 0, 0, 0) };
     private static ModernButton Footer(string text) => new() { Text = text, AutoSize = true, Height = 34, Margin = new Padding(6, 0, 0, 0) };
 
@@ -165,7 +216,10 @@ public sealed class MainForm : Form
         // Bottom bar.
         var footer = new Panel { Dock = DockStyle.Bottom, Height = 58 };
         var footerRight = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Padding = new Padding(0, 12, 12, 0) };
-        footerRight.Controls.AddRange([_build, _openFolder, _logButton]);
+        footerRight.Controls.AddRange([_build, _openFolder, _logButton, _updateButton]);
+        _updateButton.Visible = false;
+        _updateButton.Click += (_, _) => UpdateCheck.OpenPage();
+        _noticeHolder.Controls.Add(_notice);
         var footerLeft = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false };
         footerLeft.Controls.Add(_status);
         footer.Controls.Add(footerLeft);
@@ -222,6 +276,7 @@ public sealed class MainForm : Form
         body.Controls.Add(sidebarHolder);
 
         Controls.Add(body);
+        Controls.Add(_noticeHolder);
         Controls.Add(_logPanel);
         Controls.Add(_progress);
         Controls.Add(footer);
@@ -334,6 +389,7 @@ public sealed class MainForm : Form
         Wide(_note);
         Pair(_choose, _remove);
         Wide(_fromWeb);
+        Wide(_hearCurrent);
         Wide(_sourceLabel);
         Section("Song");
         Field("Name", _song);
@@ -359,6 +415,7 @@ public sealed class MainForm : Form
 
         _choose.Click += (_, _) => ChooseSource();
         _fromWeb.Click += (_, _) => GetFromWeb();
+        _hearCurrent.Click += async (_, _) => await HearCurrentAsync();
         _remove.Click += (_, _) => ClearSongs(SelectedRows());
         _editLoop.Click += (_, _) => OpenLoopEditor();
         _hearJump.Click += async (_, _) => await HearJumpAsync();
@@ -395,6 +452,39 @@ public sealed class MainForm : Form
         _many.Controls.Add(Wide("Find a song online", "", GetFromWeb));
         _many.Controls.Add(Wide("Fill from a folder of songs", "", FillFromFolder));
         _many.Controls.Add(Wide("Remove songs", "", () => ClearSongs(SelectedRows())));
+
+        void Bulk(string caption, ComboBox combo)
+        {
+            _many.Controls.Add(new Label { Text = caption, AutoSize = true, Tag = Theme.MutedTag, Margin = new Padding(0, 8, 0, 3) });
+            _many.Controls.Add(combo);
+        }
+        _manyLoop.Items.Add(NoChange);
+        foreach (LoopMode mode in BulkLoopModes)
+            _manyLoop.Items.Add(LoopModeText(mode));
+        _manyFade.Items.Add(NoChange);
+        foreach (var (fade, _) in PackBuilder.CrossfadeChoices)
+            _manyFade.Items.Add(fade);
+        _manyVolume.Items.Add(NoChange);
+        foreach (int db in PackBuilder.VolumeChoices)
+            _manyVolume.Items.Add(db == 0 ? "Normal" : $"{db:+0;-0} dB");
+        Bulk("Loop", _manyLoop);
+        Bulk("Smooth the jump", _manyFade);
+        Bulk("Volume", _manyVolume);
+        _manyLoop.SelectedIndexChanged += (_, _) =>
+        {
+            if (_manyLoop.SelectedIndex > 0)
+                ApplyToSelected(r => r.Loop = BulkLoopModes[_manyLoop.SelectedIndex - 1]);
+        };
+        _manyFade.SelectedIndexChanged += (_, _) =>
+        {
+            if (_manyFade.SelectedIndex > 0)
+                ApplyToSelected(r => r.Crossfade = PackBuilder.CrossfadeChoices[_manyFade.SelectedIndex - 1].Seconds);
+        };
+        _manyVolume.SelectedIndexChanged += (_, _) =>
+        {
+            if (_manyVolume.SelectedIndex > 0)
+                ApplyToSelected(r => r.VolumeDb = PackBuilder.VolumeChoices[_manyVolume.SelectedIndex - 1]);
+        };
         _many.Controls.Add(new Label
         {
             Text = "Fill shuffles the folder's songs across these tracks, and reuses songs if there are fewer songs than tracks.",
@@ -403,6 +493,122 @@ public sealed class MainForm : Form
             Tag = Theme.MutedTag,
             Margin = new Padding(0, 4, 0, 0),
         });
+    }
+
+    internal void ApplyToSelected(Action<TrackRow> apply)
+    {
+        if (_loading)
+            return;
+        foreach (var row in SelectedRows())
+        {
+            apply(row);
+            row.Status = "";
+        }
+        _grid.Invalidate();
+        MarkDirty();
+    }
+
+    /// <summary>Shows the shared value, or "Keep as they are" when the tracks differ.</summary>
+    private void ShowManyValues(List<TrackRow> rows)
+    {
+        bool wasLoading = _loading;
+        _loading = true;
+        _manyLoop.SelectedIndex = rows.Select(r => r.Loop).Distinct().Count() == 1 ? Array.IndexOf(BulkLoopModes, rows[0].Loop) + 1 : 0;
+        _manyFade.SelectedIndex = rows.Select(r => r.Crossfade).Distinct().Count() == 1 ? PackBuilder.CrossfadeIndex(rows[0].Crossfade) + 1 : 0;
+        _manyVolume.SelectedIndex = rows.Select(r => r.VolumeDb).Distinct().Count() == 1 ? PackBuilder.VolumeIndex(rows[0].VolumeDb) + 1 : 0;
+        _loading = wasLoading;
+    }
+
+    /// <summary>The file this track plays right now: from the pack if it's installed, otherwise Retro Rewind's own.</summary>
+    internal string? CurrentMusicFile(TrackRow row)
+    {
+        foreach (string folder in new[] { "Patches", "strm" })
+        {
+            string path = Path.Combine(_options.RetroRewindFolder, folder, row.FileBase + ".brstm");
+            if (File.Exists(path))
+                return path;
+        }
+        return null;
+    }
+
+    private async Task HearCurrentAsync()
+    {
+        if (_selected == null || CurrentMusicFile(_selected) is not { } path)
+            return;
+        SetStatus("Loading the current music...");
+        try
+        {
+            string preview = await Task.Run(() =>
+            {
+                const int rate = 32000;
+                return AudioIO.WriteRangePreview(AudioIO.Decode(path, rate), rate, 0, 30);
+            });
+            if (IsDisposed)
+                return;
+            PlayPreview(preview);
+            SetStatus($"Playing 30 seconds of {Path.GetFileName(path)}. Press Esc to stop.");
+        }
+        catch (Exception ex) when (ex is InvalidDataException or FileNotFoundException or IOException)
+        {
+            if (!IsDisposed)
+                SetStatus($"Could not play it. {ex.Message}");
+        }
+    }
+
+    private void PlayPreview(string file)
+    {
+        StopPreview();
+        _previewFile = file;
+        _player = new SoundPlayer(file);
+        _player.Play();
+    }
+
+    private void StopPreview()
+    {
+        _player?.Stop();
+        _player?.Dispose();
+        _player = null;
+        if (_previewFile != null && File.Exists(_previewFile))
+            File.Delete(_previewFile);
+        _previewFile = null;
+    }
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData) =>
+        HandleShortcut(keyData) || base.ProcessCmdKey(ref msg, keyData);
+
+    /// <summary>Delete and Space only act on the track list, so they still type normally in text boxes.</summary>
+    internal bool HandleShortcut(Keys key)
+    {
+        if (key == (Keys.Control | Keys.F))
+        {
+            _filter.Box.Focus();
+            _filter.Box.SelectAll();
+            return true;
+        }
+        if (key == Keys.Escape && _player != null)
+        {
+            StopPreview();
+            SetStatus("Stopped.");
+            return true;
+        }
+        if (ActiveControl != _grid)
+            return false;
+        if (key == Keys.Delete)
+        {
+            var assigned = SelectedRows().Where(r => r.IsAssigned).ToList();
+            if (assigned.Count > 0)
+                ClearSongs(assigned);
+            return true;
+        }
+        if (key == Keys.Space && _selected != null)
+        {
+            if (_selected.IsAssigned && !_missing.Contains(_selected))
+                _ = HearJumpAsync();
+            else
+                _ = HearCurrentAsync();
+            return true;
+        }
+        return false;
     }
 
     private void ConfigureGrid()
@@ -452,7 +658,7 @@ public sealed class MainForm : Form
             var size = TextRenderer.MeasureText(status, _pillFont);
             var pill = new Rectangle(e.CellBounds.X + 8, e.CellBounds.Y + (e.CellBounds.Height - 22) / 2, size.Width + 12, 22);
             Color text;
-            if (status == "Failed")
+            if (status is "Failed" or "Missing")
             {
                 Theme.FillBox(e.Graphics, pill, p.Bad, null, 10);
                 text = p.OnAccent;
@@ -533,6 +739,8 @@ public sealed class MainForm : Form
 
     private string StatusOf(TrackRow row)
     {
+        if (_missing.Contains(row))
+            return "Missing";
         if (row.Status.Length > 0)
             return row.Status;
         if (row.IsAssigned)
@@ -659,6 +867,8 @@ public sealed class MainForm : Form
         _packName.Box.Text = _options.PackName;
         _author.Box.Text = _options.Author;
         ReloadCatalog(project);
+        RunChecks(force: true);
+        _ = UpdateSizeAsync();
     }
 
     private static void CopyOptions(Options from, Options to)
@@ -727,6 +937,9 @@ public sealed class MainForm : Form
     {
         string category = (_sidebar.SelectedItem as SideList.Item)?.Name ?? AllTracks;
         string[] words = _filter.Box.Text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        _missing.Clear();
+        foreach (var row in _rows.Where(r => r.IsAssigned && !File.Exists(r.Source)))
+            _missing.Add(row);
         _visible = _rows.Where(r =>
             (category == AllTracks || (category == MySongs ? r.IsAssigned : r.Category == category))
             && (_platform.Length == 0 || r.Platform == _platform)
@@ -742,13 +955,59 @@ public sealed class MainForm : Form
     {
         RebuildSidebar(null);
         MarkDirty();
+        _ = UpdateSizeAsync();
+    }
+
+    /// <summary>Works out song lengths in the background, so a big pack never holds up the window.</summary>
+    private async Task UpdateSizeAsync()
+    {
+        var unknown = _rows.Where(r => r.IsAssigned && !_missing.Contains(r)).Select(r => r.Source)
+            .Where(source => !_seconds.ContainsKey(source)).Distinct().ToList();
+        if (unknown.Count > 0)
+        {
+            var found = await Task.Run(() =>
+            {
+                var lengths = new Dictionary<string, double>();
+                foreach (string source in unknown)
+                {
+                    try
+                    {
+                        lengths[source] = AudioIO.Probe(source).Duration;
+                    }
+                    catch (Exception ex) when (ex is InvalidDataException or IOException or System.Text.Json.JsonException or FileNotFoundException)
+                    {
+                        lengths[source] = 0;
+                    }
+                }
+                return lengths;
+            });
+            if (IsDisposed)
+                return;
+            foreach (var (source, seconds) in found)
+                _seconds[source] = seconds;
+        }
+
+        _sizeEstimate = _rows.Where(r => r.IsAssigned && _seconds.ContainsKey(r.Source)).Sum(r => PackBuilder.EstimateBytes(
+            _seconds[r.Source],
+            r.FixedRate ?? _options.SampleRate,
+            _options.MultiChannelSlots ? r.StockChannels : 2,
+            r.StockFinalBase != null && _options.StockFinalLapFiles));
+        UpdateSummary();
     }
 
     private void UpdateSummary()
     {
         int songs = _rows.Count(r => r.IsAssigned);
-        if (_status.Text.Length == 0 || _status.Text.Contains(" set"))
-            _status.Text = songs == 0 ? "No songs set yet. Drag a song onto a track to start." : $"{songs} song{(songs == 1 ? "" : "s")} set";
+        if (_status.Text.Length != 0 && !_status.Text.Contains(" set"))
+            return;
+        if (songs == 0)
+        {
+            _status.Text = "No songs set yet. Drag a song onto a track to start.";
+            return;
+        }
+        string size = _sizeEstimate > 0 ? $", about {_sizeEstimate / 1048576.0:0} MB" : "";
+        string missing = _missing.Count > 0 ? $", {_missing.Count} missing" : "";
+        _status.Text = $"{songs} song{(songs == 1 ? "" : "s")} set{size}{missing}";
     }
 
     private void DetailChanged(Action<TrackRow> apply)
@@ -770,6 +1029,7 @@ public sealed class MainForm : Form
         if (many)
         {
             _manyTitle.Text = $"{rows.Count} tracks selected";
+            ShowManyValues(rows);
             return;
         }
 
@@ -780,7 +1040,10 @@ public sealed class MainForm : Form
         _title.Text = row?.Name ?? "Pick a track";
         _fileLabel.Text = row == null ? "" : row.FileBase + ".brstm";
         _note.Text = row?.Note ?? "";
-        _sourceLabel.Text = has ? Path.GetFileName(row!.Source) : "No song set. You can also drag one onto the track.";
+        _sourceLabel.Text = !has ? "No song set. You can also drag one onto the track."
+            : _missing.Contains(row!) ? $"Missing: {Path.GetFileName(row!.Source)}. Choose it again."
+            : Path.GetFileName(row!.Source);
+        _hearCurrent.Visible = row != null && CurrentMusicFile(row) != null;
         _song.Box.Text = row?.Song ?? "";
         _credits.Box.Text = row?.Credits ?? "";
         _loopMode.SelectedIndex = (int)(row?.Loop ?? LoopMode.Auto);
@@ -809,9 +1072,9 @@ public sealed class MainForm : Form
         if (Disposing || IsDisposed)
             return;
         var row = _selected;
-        _thumb.Visible = row?.IsAssigned == true;
+        _thumb.Visible = row?.IsAssigned == true && !_missing.Contains(row);
         _loopSummary.Visible = _thumb.Visible;
-        if (row == null || !row.IsAssigned)
+        if (row == null || !row.IsAssigned || _missing.Contains(row))
             return;
         _thumb.Show([], 0, 1, false);
         _loopSummary.Text = "Reading the song...";
@@ -994,9 +1257,7 @@ public sealed class MainForm : Form
                 AudioIO.WriteSeamPreview(Processing.Prepare(row.Source, rate, mode, row.LoopStart, row.LoopEnd, Options.LoudnessOff, crossfadeSeconds: row.Crossfade)));
             if (IsDisposed)
                 return;
-            _player?.Stop();
-            _player = new SoundPlayer(file);
-            _player.Play();
+            PlayPreview(file);
             SetStatus("Playing 4 seconds before the jump and 4 seconds after it.");
         }
         catch (Exception ex) when (ex is InvalidDataException or FileNotFoundException or FormatException or IOException)
@@ -1018,12 +1279,43 @@ public sealed class MainForm : Form
             ReloadCatalog(project);
         }
         MarkDirty();
+        RunChecks(force: true);
+        _ = UpdateSizeAsync();
+        if (form.WantsRemove)
+            RemovePackFromGame();
         if (form.WantsFfmpeg)
             _ = InstallFfmpegAsync();
         if (form.WantsOpen)
             OpenProject();
         if (form.WantsSave)
             SaveProject();
+    }
+
+    private void RemovePackFromGame()
+    {
+        ReadNames();
+        string name = PackBuilder.SafeName(_options.PackName);
+        var answer = MessageBox.Show(this,
+            $"Do you want to remove \"{name}\" from the game?\r\n\r\nIts Wheel Wizard mod and its songs in Patches will be deleted, and tracks go back to their old music.\r\n\r\nYour exported pack, your song files and this project stay.",
+            "Remove pack", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+        if (answer != DialogResult.Yes)
+            return;
+        try
+        {
+            string output = _settings.OutputFolder.Length > 0 ? _settings.OutputFolder : AppStorage.DefaultOutputFolder;
+            string music = Path.Combine(output, name, "RetroRewind6", "Patches");
+            int removed = PackBuilder.RemovePack(_options.PackName, PackBuilder.ModsFolders(), _options.RetroRewindFolder, music);
+            foreach (var row in _rows)
+                row.Status = "";
+            ScanInstalled();
+            _grid.Invalidate();
+            SetStatus($"Removed {name} from the game, along with {removed} files in Patches. Restart Wheel Wizard if it's open.");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            SetStatus("Could not remove the pack. Open Activity to see why.");
+            WriteLog($"Could not remove the pack. {ex.Message}");
+        }
     }
 
     private void SaveProject()
@@ -1286,8 +1578,7 @@ public sealed class MainForm : Form
 
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
-        _player?.Stop();
-        _player?.Dispose();
+        StopPreview();
         _autosave.Dispose();
         base.OnFormClosed(e);
     }
@@ -1304,6 +1595,14 @@ public sealed class MainForm : Form
     }
 
     internal void SaveForTest() => SaveNow();
+    internal void RunChecksForTest() => RunChecks(force: true);
+    internal string StatusOfForTest(TrackRow row) => StatusOf(row);
+    internal void FocusGridForTest()
+    {
+        ActiveControl = _grid;
+    }
+    internal Task UpdateSizeForTest() => UpdateSizeAsync();
+    internal string StatusTextForTest => _status.Text;
     internal string? ExportedZipForTest => _lastBuildZip;
     internal string ActionButtonTextForTest => _build.Text;
     internal void PickSidebarIndexForTest(int index) => _sidebar.SelectedIndex = index;
@@ -1373,12 +1672,14 @@ public sealed class SettingsForm : Form
     private readonly ComboBox _loudness = new FlatCombo { Width = 200 };
     private readonly FlatCheck _multi = new() { Text = "Multi-channel stock slots (only for CTGP or other mods)", AutoSize = true };
     private readonly FlatCheck _final = new() { Text = "Write stock final lap files (_f)", AutoSize = true };
+    private readonly FlatCheck _updates = new() { Text = "Tell me when a new version is out", AutoSize = true };
     private readonly FlatCheck _boost = new() { Text = "Raise music volume in revo_kart.brsar (made from your game file)", AutoSize = true };
     private readonly FieldBox _game = new("Found automatically through Wheel Wizard") { Width = 360 };
 
     public bool FolderChanged { get; private set; }
     public bool WantsFfmpeg { get; private set; }
     public bool WantsOpen { get; private set; }
+    public bool WantsRemove { get; private set; }
     public bool WantsSave { get; private set; }
 
     public SettingsForm(Options options, AppSettings settings)
@@ -1458,11 +1759,14 @@ public sealed class SettingsForm : Form
         layout.Controls.Add(_boost, 0, row++);
         layout.SetColumnSpan(_boost, 2);
         _boost.Margin = new Padding(0, 12, 0, 4);
+        _updates.Checked = settings.CheckForUpdates;
         layout.Controls.Add(_multi, 0, row++);
         layout.SetColumnSpan(_multi, 2);
         _multi.Margin = new Padding(0, 0, 0, 4);
         layout.Controls.Add(_final, 0, row++);
         layout.SetColumnSpan(_final, 2);
+        layout.Controls.Add(_updates, 0, row++);
+        layout.SetColumnSpan(_updates, 2);
 
         var projectButtons = new FlowLayoutPanel { AutoSize = true, Margin = new Padding(0, 12, 0, 0) };
         var openProject = new ModernButton { Text = "Open project", AutoSize = true, Margin = new Padding(0, 0, 6, 0) };
@@ -1477,7 +1781,13 @@ public sealed class SettingsForm : Form
             WantsSave = true;
             Accept();
         };
-        projectButtons.Controls.AddRange([openProject, saveProject]);
+        var removePack = new ModernButton { Text = "Remove pack from game", AutoSize = true, Margin = new Padding(6, 0, 0, 0) };
+        removePack.Click += (_, _) =>
+        {
+            WantsRemove = true;
+            Accept();
+        };
+        projectButtons.Controls.AddRange([openProject, saveProject, removePack]);
         layout.Controls.Add(projectButtons, 0, row++);
         layout.SetColumnSpan(projectButtons, 2);
 
@@ -1518,6 +1828,7 @@ public sealed class SettingsForm : Form
             SoundArchive.ClearCache();
         _settings.GameFile = _game.Box.Text;
         _settings.BoostMusicSlots = _boost.Checked;
+        _settings.CheckForUpdates = _updates.Checked;
         DialogResult = DialogResult.OK;
         Close();
     }

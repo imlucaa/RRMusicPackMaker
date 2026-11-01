@@ -442,6 +442,55 @@ public static class PackBuilder
         return files.Length;
     }
 
+    /// <summary>
+    /// Takes the pack out of the game: its mods, and its songs in Patches unless another mod still needs them.
+    /// The built pack and the original songs are left alone. Returns how many files left Patches.
+    /// </summary>
+    public static int RemovePack(string packName, IEnumerable<string> modsFolders, string retroRewindFolder, string? musicFolder)
+    {
+        string name = SafeName(packName);
+        var folders = modsFolders.ToList();
+        var files = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (musicFolder != null && Directory.Exists(musicFolder))
+            foreach (string file in Directory.GetFiles(musicFolder, "*.brstm"))
+                files.Add(Path.GetFileName(file));
+        foreach (string mods in folders)
+        {
+            string folder = Path.Combine(mods, name);
+            if (!Directory.Exists(folder))
+                continue;
+            foreach (string file in Directory.GetFiles(folder))
+                if (!Path.GetExtension(file).Equals(".ini", StringComparison.OrdinalIgnoreCase))
+                    files.Add(Path.GetFileName(file));
+            Directory.Delete(folder, true);
+        }
+
+        var stillNeeded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (string mods in folders.Where(Directory.Exists))
+            foreach (string file in Directory.GetFiles(mods, "*", SearchOption.AllDirectories))
+                stillNeeded.Add(Path.GetFileName(file));
+
+        int removed = 0;
+        string patches = Path.Combine(retroRewindFolder, "Patches");
+        foreach (string file in files.Where(file => !stillNeeded.Contains(file)))
+        {
+            string path = Path.Combine(patches, file);
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+                removed++;
+            }
+        }
+        return removed;
+    }
+
+    /// <summary>Roughly how big one track's files will be. DSP-ADPCM stores 14 samples in 8 bytes, per channel.</summary>
+    internal static long EstimateBytes(double seconds, int rate, int channels, bool hasFinalFile)
+    {
+        long bytes = (long)(seconds * rate * channels * 8 / 14);
+        return hasFinalFile ? bytes * 2 : bytes;
+    }
+
     /// <summary>Other mods that replace any of the same songs as this pack.</summary>
     public static List<string> ModsSharingSongs(string musicFolder, string packName, string modsFolder)
     {

@@ -24,7 +24,19 @@ public class WindowTests : IDisposable
         Environment.SetEnvironmentVariable("RRMUSIC_DATA", null);
         Environment.SetEnvironmentVariable("RRMUSIC_MODS", null);
         Environment.SetEnvironmentVariable("RRMUSIC_RR", null);
-        Directory.Delete(_data, true);
+        // A background song read from the window can hold a file for a moment after it closes.
+        for (int attempt = 0; ; attempt++)
+        {
+            try
+            {
+                Directory.Delete(_data, true);
+                return;
+            }
+            catch (IOException) when (attempt < 40)
+            {
+                Thread.Sleep(250);
+            }
+        }
     }
 
     private static void OnUiThread(Action test)
@@ -245,6 +257,87 @@ public class WindowTests : IDisposable
         form.DrawToBitmap(bitmap, new Rectangle(0, 0, form.Width, form.Height));
         form.ToggleTheme();
         form.DrawToBitmap(bitmap, new Rectangle(0, 0, form.Width, form.Height));
+        form.Close();
+    });
+
+    [Fact]
+    public void MissingSong_IsMarked_AndClearsWhenRestored() => OnUiThread(() =>
+    {
+        string song = WriteSong();
+        using var form = OpenWindow();
+        form.HandleDrop([song], 0);
+        var row = form.Rows.First(r => r.IsAssigned);
+        Assert.Equal("Ready", form.StatusOfForTest(row));
+
+        string moved = song + ".moved";
+        File.Move(song, moved);
+        form.RunChecksForTest();
+        Assert.Equal("Missing", form.StatusOfForTest(row));
+
+        File.Move(moved, song);
+        form.RunChecksForTest();
+        Assert.Equal("Ready", form.StatusOfForTest(row));
+        form.Close();
+    });
+
+    [Fact]
+    public void BulkSettings_ApplyToEverySelectedTrack() => OnUiThread(() =>
+    {
+        using var form = OpenWindow();
+        form.SelectVisible(0, 1, 2);
+        Application.DoEvents();
+        form.ApplyToSelected(r => r.VolumeDb = 6);
+        var rows = form.SelectedRows();
+        Assert.Equal(3, rows.Count);
+        Assert.All(rows, r => Assert.Equal(6, r.VolumeDb));
+        Assert.Equal(3, form.Rows.Count(r => r.VolumeDb == 6));
+        form.Close();
+    });
+
+    [Fact]
+    public void DeleteKey_RemovesSong_OnlyWhenTheListHasFocus() => OnUiThread(() =>
+    {
+        string song = WriteSong();
+        using var form = OpenWindow();
+        form.HandleDrop([song], 0);
+        form.SelectVisible(0);
+        Application.DoEvents();
+
+        form.HandleShortcut(Keys.Control | Keys.F);
+        Assert.False(form.HandleShortcut(Keys.Delete));
+        Assert.Single(form.Rows, r => r.IsAssigned);
+
+        form.FocusGridForTest();
+        Assert.True(form.HandleShortcut(Keys.Delete));
+        Assert.DoesNotContain(form.Rows, r => r.IsAssigned);
+        form.Close();
+    });
+
+    [Fact]
+    public void CurrentMusic_PrefersTheInstalledPack() => OnUiThread(() =>
+    {
+        string rr = Path.Combine(_data, "rr");
+        Directory.CreateDirectory(Path.Combine(rr, "strm"));
+        Directory.CreateDirectory(Path.Combine(rr, "Patches"));
+        File.WriteAllText(Path.Combine(rr, "strm", "title_bg.brstm"), "x");
+        using var form = OpenWindow();
+        var row = form.Rows.First(r => r.FileBase == "title_bg");
+        Assert.EndsWith(Path.Combine("strm", "title_bg.brstm"), form.CurrentMusicFile(row));
+        File.WriteAllText(Path.Combine(rr, "Patches", "title_bg.brstm"), "x");
+        Assert.EndsWith(Path.Combine("Patches", "title_bg.brstm"), form.CurrentMusicFile(row));
+        Assert.Null(form.CurrentMusicFile(form.Rows.First(r => r.FileBase == "offline_bg")));
+        form.Close();
+    });
+
+    [Fact]
+    public void SizeEstimate_ShowsInTheStatus() => OnUiThread(() =>
+    {
+        string song = WriteSong();
+        using var form = OpenWindow();
+        form.HandleDrop([song], 0);
+        var size = form.UpdateSizeForTest();
+        Pump(() => size.IsCompleted);
+        Assert.Contains("MB", form.StatusTextForTest);
         form.Close();
     });
 

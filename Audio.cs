@@ -24,10 +24,12 @@ public sealed class Song
 public static class Tools
 {
     public static string DataToolsFolder => Path.Combine(AppStorage.Folder, "tools");
+    public static string AppFfmpegFolder => Path.Combine(AppContext.BaseDirectory, "ffmpeg");
+    public static string DataFfmpegFolder => Path.Combine(DataToolsFolder, "ffmpeg");
 
     public static string? TryFind(string exe)
     {
-        var dirs = new List<string> { AppContext.BaseDirectory, DataToolsFolder };
+        var dirs = new List<string> { AppFfmpegFolder, AppContext.BaseDirectory, DataFfmpegFolder, DataToolsFolder };
         dirs.AddRange((Environment.GetEnvironmentVariable("PATH") ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries));
         foreach (var dir in dirs)
         {

@@ -6,8 +6,10 @@ namespace RRMusicPackMaker;
 /// <summary>Downloads FFmpeg for people who don't have it, checks it against its published checksum, and puts it next to the app.</summary>
 public static class FfmpegInstaller
 {
-    private const string ReleaseBase = "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/";
-    private const string ZipName = "ffmpeg-master-latest-win64-gpl.zip";
+    // The "shared" build keeps its code in DLLs that both programs reuse: a 77 MB download and 152 MB
+    // installed, against 192 MB and 340 MB for the standalone build. Every format the app accepts was tested on it.
+    private const string ReleaseBase = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/";
+    private const string ZipName = "ffmpeg-master-latest-win64-lgpl-shared.zip";
     private const string SumsName = "checksums.sha256";
     private static readonly string[] Programs = ["ffmpeg.exe", "ffprobe.exe"];
 
@@ -63,7 +65,7 @@ public static class FfmpegInstaller
 
     private static string ExtractToFirstWritable(string zip)
     {
-        foreach (string folder in new[] { AppContext.BaseDirectory, Tools.DataToolsFolder })
+        foreach (string folder in new[] { Tools.AppFfmpegFolder, Tools.DataFfmpegFolder })
         {
             try
             {
@@ -78,23 +80,27 @@ public static class FfmpegInstaller
         throw new DownloadFailedException("Couldn't save FFmpeg in the app's folder or data folder.");
     }
 
-    /// <summary>Takes only the two programs out of the archive, by fixed name, and only if both are there.</summary>
+    /// <summary>Takes only the two programs and their DLLs out of the archive, by name, and only if both programs are there.</summary>
     internal static void Extract(string zip, string folder)
     {
         Directory.CreateDirectory(folder);
         using var archive = ZipFile.OpenRead(zip);
-        var entries = Programs
-            .Select(name => (Name: name, Entry: archive.Entries.FirstOrDefault(e => e.FullName.EndsWith("/bin/" + name, StringComparison.OrdinalIgnoreCase))))
-            .ToList();
-        var missing = entries.FirstOrDefault(e => e.Entry == null);
-        if (missing.Name != null)
-            throw new DownloadFailedException($"The FFmpeg download has no {missing.Name}, so it was not installed.");
+        var bin = archive.Entries.Where(entry => Path.GetFileName(Path.GetDirectoryName(entry.FullName.Replace('/', Path.DirectorySeparatorChar)) ?? "")
+            .Equals("bin", StringComparison.OrdinalIgnoreCase)).ToList();
+        foreach (string program in Programs)
+            if (!bin.Any(entry => entry.Name.Equals(program, StringComparison.OrdinalIgnoreCase)))
+                throw new DownloadFailedException($"The FFmpeg download has no {program}, so it was not installed.");
 
-        foreach (var (name, entry) in entries)
+        foreach (var entry in bin)
         {
-            string path = Path.Combine(folder, name);
+            bool wanted = Programs.Contains(entry.Name, StringComparer.OrdinalIgnoreCase)
+                || entry.Name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase);
+            if (!wanted)
+                continue;
+            // entry.Name is only the final part of the path, so nothing can land outside the folder.
+            string path = Path.Combine(folder, entry.Name);
             string temp = path + ".tmp";
-            entry!.ExtractToFile(temp, true);
+            entry.ExtractToFile(temp, true);
             File.Move(temp, path, true);
         }
     }

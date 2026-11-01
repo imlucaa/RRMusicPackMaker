@@ -355,6 +355,27 @@ public sealed class FlatCombo : ComboBox
     }
 }
 
+/// <summary>A warning strip across the top of the window, shown only while something needs attention.</summary>
+public sealed class NoticeBar : Control
+{
+    public NoticeBar() => DoubleBuffered = true;
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var p = Theme.Current;
+        e.Graphics.Clear(Parent?.BackColor ?? p.Window);
+        Theme.FillBox(e.Graphics, ClientRectangle, p.Raised, p.Bad);
+        var text = new Rectangle(12, 0, Width - 24, Height);
+        TextRenderer.DrawText(e.Graphics, Text, Font, text, p.Text, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+    }
+
+    protected override void OnTextChanged(EventArgs e)
+    {
+        base.OnTextChanged(e);
+        Invalidate();
+    }
+}
+
 /// <summary>A rounded surface that groups related controls, the main building block of the window.</summary>
 public sealed class CardPanel : Panel
 {

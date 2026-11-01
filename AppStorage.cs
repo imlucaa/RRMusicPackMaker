@@ -13,6 +13,8 @@ public sealed class AppSettings
 
     /// <summary>The player's Mario Kart Wii file, if Wheel Wizard can't tell us where it is.</summary>
     public string GameFile { get; set; } = "";
+
+    public bool CheckForUpdates { get; set; } = true;
 }
 
 /// <summary>Where the app keeps its settings and the autosaved project.</summary>
