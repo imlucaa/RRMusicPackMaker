@@ -321,7 +321,7 @@ public static class Processing
                 if (found is { } f)
                 {
                     SetLoop(song, f.Start, f.End);
-                    log?.Invoke($"Found loop {AudioIO.FormatTime((double)f.Start / rate)} to {AudioIO.FormatTime((double)f.End / rate)}, match {f.Score:P0}.");
+                    log?.Invoke($"Found loop {AudioIO.FormatTime((double)f.Start / rate)} to {AudioIO.FormatTime((double)f.End / rate)}, match {f.Score * 100:0}%.");
                 }
                 else
                 {

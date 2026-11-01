@@ -15,6 +15,9 @@ public sealed class AppSettings
     public string GameFile { get; set; } = "";
 
     public bool CheckForUpdates { get; set; } = true;
+
+    /// <summary>Set once the first-run setup has been seen.</summary>
+    public bool SetupDone { get; set; }
 }
 
 /// <summary>Where the app keeps its settings and the autosaved project.</summary>

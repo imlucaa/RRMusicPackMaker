@@ -22,6 +22,9 @@ public static class SoundArchive
 
     private static string CachePath => Path.Combine(AppStorage.Folder, "sound", FileName);
 
+    /// <summary>Once the patched copy exists, the game file isn't needed any more.</summary>
+    public static bool IsReady => File.Exists(CachePath);
+
     /// <summary>Sets every race and battle music slot to full volume. Returns how many changed.</summary>
     internal static int BoostMusic(byte[] data)
     {
@@ -147,7 +150,7 @@ public static class SoundArchive
         File.Copy(archive, target, true);
     }
 
-    private static string? FindGame(AppSettings settings)
+    internal static string? FindGame(AppSettings settings)
     {
         if (File.Exists(settings.GameFile))
             return settings.GameFile;

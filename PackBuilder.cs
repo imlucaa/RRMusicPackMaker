@@ -134,7 +134,7 @@ public static class PackBuilder
         return clean.Length == 0 ? "Music Pack" : clean.ToString().TrimEnd('.', ' ');
     }
 
-    public static BuildResult Build(Options options, IReadOnlyList<TrackRow> rows, string outputFolder, Action<string> log, Action<int, int>? progress = null)
+    public static BuildResult Build(Options options, IReadOnlyList<TrackRow> rows, string outputFolder, Action<string> log, Action<int, int>? progress = null, bool writeZip = true)
     {
         var work = rows.Where(r => r.IsAssigned).ToList();
         if (work.Count == 0)
@@ -238,10 +238,13 @@ public static class PackBuilder
 
         // A zip with no music in it would only look like a finished pack.
         string zip = Path.Combine(outputFolder, name + ".zip");
-        File.Delete(zip);
         var music = Directory.GetFiles(musicFolder, "*.brstm");
-        if (music.Length > 0)
-            ZipFile.CreateFromDirectory(packFolder, zip, CompressionLevel.Fastest, false);
+        if (writeZip)
+        {
+            File.Delete(zip);
+            if (music.Length > 0)
+                ZipFile.CreateFromDirectory(packFolder, zip, CompressionLevel.Fastest, false);
+        }
 
         long bytes = music.Sum(f => new FileInfo(f).Length);
         return new BuildResult(packFolder, musicFolder, zip, work.Count - failed, failed, bytes, unchanged, encoded);

@@ -37,12 +37,12 @@ public sealed class MainForm : Form
     private readonly SideList _sidebar = new() { Dock = DockStyle.Fill, Tag = Theme.PanelTag };
     private readonly CleanGrid _grid = new() { Dock = DockStyle.Fill };
     private readonly ModernButton _themeButton = Header("");
-    private readonly ModernButton _build = new() { Text = "Export pack and add to Patches", Tag = Theme.AccentTag, AutoSize = true, Height = 34, Padding = new Padding(14, 2, 14, 2), Margin = new Padding(6, 0, 0, 0) };
+    private readonly ModernButton _build = new() { Text = "Add to Patches", Tag = Theme.AccentTag, AutoSize = true, Height = 34, Padding = new Padding(14, 2, 14, 2), Margin = new Padding(6, 0, 0, 0) };
     private readonly ModernButton _openFolder = Footer("Show exported pack");
     private readonly ModernButton _logButton = Footer("Activity");
     private readonly ModernButton _updateButton = Footer("Update available");
-    private readonly NoticeBar _notice = new() { Dock = DockStyle.Fill };
-    private readonly Panel _noticeHolder = new() { Dock = DockStyle.Top, Visible = false, Padding = new Padding(12, 0, 12, 10) };
+    private readonly ModernButton _export = Footer("Export pack");
+    private string _reportedIssues = "";
     private readonly ModernButton _hearCurrent = new() { Text = "▶  Hear current music", Height = 32, Dock = DockStyle.Fill, Margin = new Padding(0, 8, 0, 0) };
     private readonly ComboBox _manyLoop = new FlatCombo { Width = 310, Margin = new Padding(0, 0, 0, 4) };
     private readonly ComboBox _manyFade = new FlatCombo { Width = 310, Margin = new Padding(0, 0, 0, 4) };
@@ -109,23 +109,30 @@ public sealed class MainForm : Form
         LoadAutosave();
 
         FormClosing += (_, _) => SaveNow();
-        Shown += async (_, _) => await OfferFfmpegAsync();
+        Shown += (_, _) => ShowSetupIfNeeded();
         Shown += async (_, _) => await CheckForUpdateAsync();
         Activated += (_, _) => RunChecks(force: false);
         RunChecks(force: true);
     }
 
-    /// <summary>The app can't convert songs without FFmpeg, so offer it on launch rather than failing on the first build.</summary>
-    private async Task OfferFfmpegAsync()
+    /// <summary>The app can't convert songs without FFmpeg, so first-run setup comes before anything else.</summary>
+    private void ShowSetupIfNeeded()
     {
         // RRMUSIC_DATA means an automated run, where nobody is there to answer.
-        if (FfmpegInstaller.IsInstalled || Environment.GetEnvironmentVariable("RRMUSIC_DATA") != null)
+        if (Environment.GetEnvironmentVariable("RRMUSIC_DATA") != null)
             return;
-        var answer = MessageBox.Show(this,
-            "FFmpeg is needed to convert songs, and it isn't on this PC.\r\n\r\nDownload it now? It's a 77 MB download and takes about 150 MB of space.\r\n\r\nYou can also do this later from Settings.",
-            "Install FFmpeg", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-        if (answer == DialogResult.Yes)
-            await InstallFfmpegAsync();
+        bool found = SetupForm.IsRetroRewindFolder(_options.RetroRewindFolder);
+        if (!SetupForm.ShouldShow(FfmpegInstaller.IsInstalled, found, _settings.SetupDone))
+            return;
+
+        using var setup = new SetupForm(_options, _settings);
+        setup.ShowDialog(this);
+        _settings.SetupDone = true;
+        AppStorage.SaveSettings(_settings);
+        if (setup.FolderChanged)
+            ReloadCatalog(Project.From(_options, _rows));
+        RunChecks(force: true);
+        _ = UpdateSizeAsync();
     }
 
     private async Task InstallFfmpegAsync()
@@ -181,9 +188,13 @@ public sealed class MainForm : Form
         _lastCheck = DateTime.UtcNow;
 
         var issues = SetupCheck.Run(_options.RetroRewindFolder);
-        _notice.Text = string.Join(Environment.NewLine, issues);
-        _noticeHolder.Height = 18 + Math.Max(1, issues.Count) * 22 + 10;
-        _noticeHolder.Visible = issues.Count > 0;
+        string report = string.Join(Environment.NewLine, issues);
+        if (report != _reportedIssues)
+        {
+            _reportedIssues = report;
+            if (report.Length > 0)
+                WriteLog(report);
+        }
 
         int before = _missing.Count;
         _missing.Clear();
@@ -216,15 +227,15 @@ public sealed class MainForm : Form
         // Bottom bar.
         var footer = new Panel { Dock = DockStyle.Bottom, Height = 58 };
         var footerRight = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Padding = new Padding(0, 12, 12, 0) };
-        footerRight.Controls.AddRange([_build, _openFolder, _logButton, _updateButton]);
+        footerRight.Controls.AddRange([_build, _export, _openFolder, _logButton, _updateButton]);
         _updateButton.Visible = false;
         _updateButton.Click += (_, _) => UpdateCheck.OpenPage();
-        _noticeHolder.Controls.Add(_notice);
         var footerLeft = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false };
         footerLeft.Controls.Add(_status);
         footer.Controls.Add(footerLeft);
         footer.Controls.Add(footerRight);
-        _build.Click += async (_, _) => await BuildAndAddAsync();
+        _build.Click += async (_, _) => await AddToPatchesAsync();
+        _export.Click += async (_, _) => await ExportPackAsync();
         _openFolder.Click += (_, _) => OpenBuildFolder();
         _logButton.Click += (_, _) => _logPanel.Visible = !_logPanel.Visible;
         ShowInstallButtons(false);
@@ -276,7 +287,6 @@ public sealed class MainForm : Form
         body.Controls.Add(sidebarHolder);
 
         Controls.Add(body);
-        Controls.Add(_noticeHolder);
         Controls.Add(_logPanel);
         Controls.Add(_progress);
         Controls.Add(footer);
@@ -1355,11 +1365,11 @@ public sealed class MainForm : Form
         }
     }
 
-    /// <summary>Building, exporting and installing are one step, so a rebuilt song can never be left uninstalled.</summary>
-    internal async Task BuildAndAddAsync()
+    /// <summary>Builds the songs and puts them in the game. Building first means a changed song can't be left out of date.</summary>
+    internal async Task AddToPatchesAsync()
     {
         _lastBuildMusicFolder = null;
-        await BuildPackAsync();
+        await BuildPackAsync(writeZip: false);
         if (IsDisposed || _lastBuildMusicFolder == null)
             return;
         string? archive = await PrepareSoundArchiveAsync();
@@ -1367,7 +1377,18 @@ public sealed class MainForm : Form
             InstallToPatches(archive);
     }
 
-    internal async Task BuildPackAsync()
+    /// <summary>Builds the songs and saves the shareable zip. The game isn't touched.</summary>
+    internal async Task ExportPackAsync()
+    {
+        _lastBuildMusicFolder = null;
+        await BuildPackAsync(writeZip: true);
+        if (IsDisposed || _lastBuildMusicFolder == null || _lastBuildZip == null || !File.Exists(_lastBuildZip))
+            return;
+        SetStatus($"Exported {Path.GetFileName(_lastBuildZip)}. Click Show exported pack to find it.");
+        WriteLog($"Exported pack: {_lastBuildZip}");
+    }
+
+    internal async Task BuildPackAsync(bool writeZip = true)
     {
         if (_rows.All(r => !r.IsAssigned))
         {
@@ -1377,7 +1398,9 @@ public sealed class MainForm : Form
         string output = _settings.OutputFolder.Length > 0 ? _settings.OutputFolder : AppStorage.DefaultOutputFolder;
         ReadNames();
         _build.Enabled = false;
-        ShowInstallButtons(false);
+        _export.Enabled = false;
+        if (writeZip)
+            ShowInstallButtons(false);
         _progress.Fraction = 0;
         SetStatus("Building...");
         var rows = _rows.ToList();
@@ -1390,13 +1413,16 @@ public sealed class MainForm : Form
                 {
                     _progress.Fraction = (double)done / total;
                     _grid.Invalidate();
-                })));
+                }), writeZip));
             if (IsDisposed)
                 return;
             _lastBuildMusicFolder = result.Built > 0 ? result.MusicFolder : null;
             _lastBuildFolder = result.Folder;
-            _lastBuildZip = result.ZipPath;
-            ShowInstallButtons(result.Built > 0);
+            if (writeZip)
+            {
+                _lastBuildZip = result.ZipPath;
+                ShowInstallButtons(result.Built > 0);
+            }
             _progress.Fraction = 0;
             string unchanged = result.Unchanged > 0 ? $", {result.Unchanged} unchanged" : "";
             SetStatus(result.Failed == 0
@@ -1405,10 +1431,7 @@ public sealed class MainForm : Form
             if (result.Failed > 0)
                 _logPanel.Visible = true;
             if (result.Built > 0)
-            {
                 WriteLog($"Pack: {result.Folder}");
-                WriteLog($"Zip: {result.ZipPath}");
-            }
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException or UnauthorizedAccessException)
         {
@@ -1429,6 +1452,7 @@ public sealed class MainForm : Form
     {
         {
             _build.Enabled = true;
+            _export.Enabled = true;
             _grid.Invalidate();
         }
     }
@@ -1554,9 +1578,16 @@ public sealed class MainForm : Form
             _grid.Invalidate();
             WriteLog($"Patches: {Path.Combine(_options.RetroRewindFolder, "Patches")}");
             SetStatus(wheelWizard
-                ? $"Done. Exported {Path.GetFileName(_lastBuildZip)} and added {count} files to Patches. Restart Wheel Wizard."
-                : $"Done. Exported {Path.GetFileName(_lastBuildZip)} and added {count} files to Patches.");
-            WriteLog($"Exported pack: {_lastBuildZip}");
+                ? $"Done. Added {count} files to Patches. Restart Wheel Wizard."
+                : $"Done. Added {count} files to Patches.");
+
+            // The banner is gone, so a setting that would silence the pack still needs saying once it matters.
+            var issues = SetupCheck.Run(_options.RetroRewindFolder).Where(issue => !issue.StartsWith("Dolphin", StringComparison.Ordinal)).ToList();
+            if (issues.Count > 0)
+            {
+                SetStatus(issues[0]);
+                _logPanel.Visible = true;
+            }
             if (archive != null)
                 WriteLog("Music slots raised to full volume with your own copy of revo_kart.brsar. It isn't in the exported pack.");
             WriteLog("No music change in game? Check Retro Rewind's Music setting and its Loose Archive Overrides setting.");
@@ -1605,6 +1636,8 @@ public sealed class MainForm : Form
     internal string StatusTextForTest => _status.Text;
     internal string? ExportedZipForTest => _lastBuildZip;
     internal string ActionButtonTextForTest => _build.Text;
+    internal string ExportButtonTextForTest => _export.Text;
+    internal bool ShowPackButtonVisibleForTest => _openFolder.Visible;
     internal void PickSidebarIndexForTest(int index) => _sidebar.SelectedIndex = index;
     internal object? SidebarSelectionForTest => _sidebar.SelectedItem;
     internal int SidebarCountForTest => _sidebar.Items.Count;

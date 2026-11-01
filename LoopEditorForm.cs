@@ -89,8 +89,8 @@ public sealed class LoopEditorForm : Form
         fields.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
         for (int i = 0; i < 4; i++)
             fields.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 68));
-        AddMarkerRow(fields, 0, "Start", _startBox, delta => Move(_wave.LoopStart + delta, _wave.LoopEnd));
-        AddMarkerRow(fields, 1, "End", _endBox, delta => Move(_wave.LoopStart, _wave.LoopEnd + delta));
+        AddMarkerRow(fields, 0, "Start", _startBox, delta => MoveMarkers(_wave.LoopStart + delta, _wave.LoopEnd));
+        AddMarkerRow(fields, 1, "End", _endBox, delta => MoveMarkers(_wave.LoopStart, _wave.LoopEnd + delta));
 
         var actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, Padding = new Padding(14, 2, 14, 8), WrapContents = false };
         actions.Controls.AddRange([_playJump, _playCursor, _stop, _snap]);
@@ -130,7 +130,7 @@ public sealed class LoopEditorForm : Form
             if (_candidates.SelectedIndex >= 0 && _candidates.SelectedIndex < _found.Count)
             {
                 var pick = _found[_candidates.SelectedIndex];
-                Move(pick.Start, pick.End);
+                MoveMarkers(pick.Start, pick.End);
             }
         };
         SetEnabled(false);
@@ -189,7 +189,7 @@ public sealed class LoopEditorForm : Form
                 start = (int)(info.LoopStart.Value * scale);
                 if (info.LoopEnd != null) end = (int)(info.LoopEnd.Value * scale);
             }
-            Move(start, end);
+            MoveMarkers(start, end);
             SetEnabled(true);
             _status.Text = "";
         }
@@ -204,10 +204,10 @@ public sealed class LoopEditorForm : Form
     internal Task FindLoopsForTest() => FindLoopsAsync();
     internal int MarkerStart => _wave.LoopStart;
     internal int MarkerEnd => _wave.LoopEnd;
-    internal void SetMarkersForTest(int start, int end) => Move(start, end);
+    internal void SetMarkersForTest(int start, int end) => MoveMarkers(start, end);
     internal void AcceptForTest() => Accept();
 
-    private void Move(int start, int end)
+    private void MoveMarkers(int start, int end)
     {
         _wave.SetMarkers(start, end);
         Sync();
@@ -230,7 +230,7 @@ public sealed class LoopEditorForm : Form
         {
             long? start = AudioIO.ParsePosition(_startBox.Box.Text, Rate);
             long? end = AudioIO.ParsePosition(_endBox.Box.Text, Rate);
-            Move((int)(start ?? _wave.LoopStart), (int)(end ?? _wave.LoopEnd));
+            MoveMarkers((int)(start ?? _wave.LoopStart), (int)(end ?? _wave.LoopEnd));
         }
         catch (FormatException ex)
         {
@@ -265,7 +265,7 @@ public sealed class LoopEditorForm : Form
         int snapped = await Task.Run(() => LoopFinder.SnapEnd(channels, start, end, Rate));
         if (IsDisposed)
             return;
-        Move(start, snapped);
+        MoveMarkers(start, snapped);
         _status.Text = "End moved to the closest match within 50 ms.";
     }
 

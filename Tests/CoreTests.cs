@@ -807,6 +807,16 @@ public class BuildTests : IDisposable
     }
 
     [Fact]
+    public void Build_WithoutZip_LeavesAnEarlierExportAlone()
+    {
+        var row = Row("1_N");
+        var first = Run(row);
+        var written = File.GetLastWriteTimeUtc(first.ZipPath);
+        PackBuilder.Build(new Options { PackName = "T" }, [row], _folder, _ => { }, writeZip: false);
+        Assert.Equal(written, File.GetLastWriteTimeUtc(first.ZipPath));
+    }
+
+    [Fact]
     public void Build_EveryTrackFails_LeavesNoZip()
     {
         var bad = Row("1_N");

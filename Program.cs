@@ -235,6 +235,32 @@ internal static class Program
                 download.Close();
                 return 0;
             }
+            case "setup-test":
+            {
+                // Runs first-run setup with a real install, without anyone clicking.
+                ApplicationConfiguration.Initialize();
+                Theme.Set(Option(args, "--theme") != "light");
+                using var setup = new SetupForm(new Options { RetroRewindFolder = Catalog.DetectRetroRewind() ?? "" }, new AppSettings());
+                setup.StartPosition = FormStartPosition.Manual;
+                setup.Location = new Point(-5000, -5000);
+                setup.Show();
+                Pump(300);
+                Capture(setup, args[1]);
+                Console.WriteLine($"Before: {setup.FfmpegStatusForTest} | button {setup.InstallVisibleForTest} | {setup.StartTextForTest}");
+                if (args.Contains("--install"))
+                {
+                    var install = setup.InstallAsync();
+                    PumpUntil(() => setup.FfmpegStatusForTest.Contains('%'));
+                    Capture(setup, args[2]);
+                    Console.WriteLine($"During: {setup.FfmpegStatusForTest}");
+                    PumpUntil(() => install.IsCompleted);
+                    Pump(300);
+                    Capture(setup, args[3]);
+                    Console.WriteLine($"After: {setup.FfmpegStatusForTest} | button {setup.InstallVisibleForTest} | {setup.StartTextForTest}");
+                }
+                setup.Close();
+                return 0;
+            }
             case "screenshot-settings":
             {
                 ApplicationConfiguration.Initialize();

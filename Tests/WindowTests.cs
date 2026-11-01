@@ -342,27 +342,48 @@ public class WindowTests : IDisposable
     });
 
     [Fact]
-    public void BuildAndAdd_PutsSongInModAndPatches() => OnUiThread(() =>
+    public void AddToPatches_InstallsTheSong_WithoutMakingAZip() => OnUiThread(() =>
     {
         string song = WriteSong();
-        AppStorage.SaveSettings(new AppSettings { Theme = "Dark", OutputFolder = Path.Combine(_data, "packs") });
+        string packs = Path.Combine(_data, "packs");
+        AppStorage.SaveSettings(new AppSettings { Theme = "Dark", OutputFolder = packs });
         using var form = OpenWindow();
         form.HandleDrop([song], 0);
         string file = form.Rows.First(r => r.IsAssigned).FileBase + ".brstm";
 
-        var build = form.BuildAndAddAsync();
-        Pump(() => build.IsCompleted);
+        var add = form.AddToPatchesAsync();
+        Pump(() => add.IsCompleted);
 
-        Assert.True(build.IsCompletedSuccessfully, build.Exception?.ToString());
+        Assert.True(add.IsCompletedSuccessfully, add.Exception?.ToString());
+        Assert.Equal("Add to Patches", form.ActionButtonTextForTest);
         Assert.True(File.Exists(Path.Combine(_data, "rr", "Patches", file)));
         Assert.True(File.Exists(Path.Combine(_data, "ww", "Mods", "My Music Pack", file)));
         Assert.True(File.Exists(Path.Combine(_data, "ww", "Mods", "My Music Pack", "My Music Pack.ini")));
+        Assert.Empty(Directory.GetFiles(packs, "*.zip"));
+        Assert.False(form.ShowPackButtonVisibleForTest);
+        form.Close();
+    });
 
-        // One click also exports a complete pack someone with a real Wii can use.
-        Assert.Equal("Export pack and add to Patches", form.ActionButtonTextForTest);
-        string export = form.ExportedZipForTest!;
-        Assert.True(File.Exists(export));
-        using (var zip = System.IO.Compression.ZipFile.OpenRead(export))
+    [Fact]
+    public void ExportPack_MakesACompleteZip_WithoutTouchingTheGame() => OnUiThread(() =>
+    {
+        string song = WriteSong();
+        string packs = Path.Combine(_data, "packs");
+        AppStorage.SaveSettings(new AppSettings { Theme = "Dark", OutputFolder = packs });
+        using var form = OpenWindow();
+        form.HandleDrop([song], 0);
+        string file = form.Rows.First(r => r.IsAssigned).FileBase + ".brstm";
+
+        var export = form.ExportPackAsync();
+        Pump(() => export.IsCompleted);
+
+        Assert.True(export.IsCompletedSuccessfully, export.Exception?.ToString());
+        Assert.Equal("Export pack", form.ExportButtonTextForTest);
+        Assert.True(form.ShowPackButtonVisibleForTest);
+        Assert.False(Directory.Exists(Path.Combine(_data, "rr", "Patches")));
+        Assert.False(Directory.Exists(Path.Combine(_data, "ww", "Mods", "My Music Pack")));
+
+        using (var zip = System.IO.Compression.ZipFile.OpenRead(form.ExportedZipForTest!))
         {
             var names = zip.Entries.Select(e => e.FullName.Replace('\\', '/')).ToList();
             Assert.Contains($"RetroRewind6/Patches/{file}", names);
@@ -378,7 +399,29 @@ public class WindowTests : IDisposable
     });
 
     [Fact]
-    public void BuildAndAdd_SongMissing_InstallsNothing() => OnUiThread(() =>
+    public void AddToPatches_ThenExport_KeepTheEarlierExportOnlyWhenAsked() => OnUiThread(() =>
+    {
+        string song = WriteSong();
+        string packs = Path.Combine(_data, "packs");
+        AppStorage.SaveSettings(new AppSettings { Theme = "Dark", OutputFolder = packs });
+        using var form = OpenWindow();
+        form.HandleDrop([song], 0);
+
+        var export = form.ExportPackAsync();
+        Pump(() => export.IsCompleted);
+        string zip = form.ExportedZipForTest!;
+        var written = File.GetLastWriteTimeUtc(zip);
+
+        var add = form.AddToPatchesAsync();
+        Pump(() => add.IsCompleted);
+
+        Assert.Equal(written, File.GetLastWriteTimeUtc(zip));
+        Assert.True(form.ShowPackButtonVisibleForTest);
+        form.Close();
+    });
+
+    [Fact]
+    public void AddToPatches_SongMissing_InstallsNothing() => OnUiThread(() =>
     {
         string song = WriteSong();
         AppStorage.SaveSettings(new AppSettings { Theme = "Dark", OutputFolder = Path.Combine(_data, "packs") });
@@ -386,7 +429,7 @@ public class WindowTests : IDisposable
         form.HandleDrop([song], 0);
         File.Delete(song);
 
-        var build = form.BuildAndAddAsync();
+        var build = form.AddToPatchesAsync();
         Pump(() => build.IsCompleted);
 
         Assert.False(Directory.Exists(Path.Combine(_data, "ww", "Mods", "My Music Pack")));

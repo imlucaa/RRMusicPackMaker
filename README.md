@@ -10,23 +10,22 @@ A Windows app for making custom music packs for [Retro Rewind](https://mkwiiki.o
 - Loop finder, plus a crossfade for songs that have no clean loop
 - Assign one song to many tracks, or spread a folder of songs across them
 - Find official songs on YouTube Music, or paste a link
-- Warns about setup problems, like music turned off in the game or low Dolphin volume, and about song files that went missing
+- Reports setup problems in Activity, like music turned off in the game or low Dolphin volume, and marks song files that went missing
 - Sets loop, crossfade and volume on many tracks at once, plays a track's current music, and removes a pack with one click
 - Keyboard shortcuts: Ctrl+F to search, Delete to remove a song, Space to play, Esc to stop
-- Even volume across songs, and per-song volume
 - Dark and light themes, autosave, and rebuilds that only re-encode what changed
-- One click exports the pack and adds it to the Patches folder and to Wheel Wizard and Wheel Wizard+
+- Adds the pack to the Patches folder and to Wheel Wizard and Wheel Wizard+, or exports it as a zip
 - Even volume across songs, louder on race tracks because the game's race mix turns music down, with clean per-song boost or cut
-- Exports a zip for real Wii, Dolphin or sharing, with install steps and credits inside
+- The exported zip has install steps and credits inside, for real Wii, Dolphin or sharing
 
 ## Requirements
 
 - Windows 10 or 11
 - [.NET 9 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/9.0), unless you use the NoDotNet download
 
-The app installs these for you when needed, with their checksums verified:
+A setup window on first launch helps you install FFmpeg and find your game. The app gets these for you, with their checksums verified:
 
-- [FFmpeg](https://ffmpeg.org/), the small shared build, offered on first launch if it's missing, or from **Settings**. It's a 77 MB download and takes about 150 MB of space. If you already have it on your PATH, the app uses that.
+- [FFmpeg](https://ffmpeg.org/), the small shared build, installed from the setup window or from **Settings**. It's a 77 MB download and takes about 150 MB of space. If you already have it on your PATH, the app uses that.
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp), the first time you download a song
 
 ## Download
@@ -54,16 +53,13 @@ dotnet test Tests
 
 ## How to use
 
-1. Open the app. It finds your Retro Rewind install, or you can pick it in **Settings**.
+1. Open the app. If something's missing, the setup window lets you install FFmpeg and pick your Retro Rewind folder.
 2. Drag a song onto a track, or select a track and click **Choose song**.
 3. Click **Edit loop** to set the loop, and listen to the jump.
-4. Click **Export pack and add to Patches**. This does three things:
-   - Saves the pack as a zip in `Documents\RR Music Packs`.
-   - Copies its songs to `RetroRewind6/Patches`.
-   - Adds it as a mod if you have Wheel Wizard or Wheel Wizard+, so it shows in Mods and stays in `Patches`.
+4. Click **Add to Patches** to play it yourself. This copies the songs to `RetroRewind6/Patches`, and adds them as a mod if you have Wheel Wizard or Wheel Wizard+, so they show in Mods and stay in `Patches`.
 5. Restart Wheel Wizard if it's open.
 
-**Real Wii, Dolphin or sharing:** click **Show exported pack** to find the zip. Its README explains how to install it. On a real Wii, its `RetroRewind6` folder goes on the root of the SD card.
+**Real Wii, Dolphin or sharing:** click **Export pack** to save a zip in `Documents\RR Music Packs`, then **Show exported pack** to find it. Its README explains how to install it. On a real Wii, its `RetroRewind6` folder goes on the root of the SD card.
 
 **No sound in game?** Check that the Music setting in Retro Rewind isn't set to disable music.
 
