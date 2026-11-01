@@ -1,0 +1,60 @@
+using System.Text.Json;
+
+namespace RRMusicPackMaker;
+
+public sealed class AppSettings
+{
+    /// <summary>"Light", "Dark" or "System".</summary>
+    public string Theme { get; set; } = "System";
+    public string OutputFolder { get; set; } = "";
+}
+
+/// <summary>Where the app keeps its settings and the autosaved project.</summary>
+public static class AppStorage
+{
+    private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
+
+    public static string Folder
+    {
+        get
+        {
+            string? custom = Environment.GetEnvironmentVariable("RRMUSIC_DATA");
+            string folder = string.IsNullOrWhiteSpace(custom)
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "RRMusicPackMaker")
+                : custom;
+            Directory.CreateDirectory(folder);
+            return folder;
+        }
+    }
+
+    public static string AutosavePath => Path.Combine(Folder, "autosave.rrmusic.json");
+    private static string SettingsPath => Path.Combine(Folder, "settings.json");
+
+    public static string DefaultOutputFolder =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "RR Music Packs");
+
+    public static AppSettings LoadSettings()
+    {
+        try
+        {
+            if (File.Exists(SettingsPath))
+                return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsPath), Json) ?? new AppSettings();
+        }
+        catch (JsonException)
+        {
+            // A damaged settings file only costs the theme and output folder, so start fresh.
+        }
+        return new AppSettings();
+    }
+
+    public static void SaveSettings(AppSettings settings) =>
+        File.WriteAllText(SettingsPath, JsonSerializer.Serialize(settings, Json));
+
+    /// <summary>Writes through a temporary file, so a crash mid-save cannot damage the last good copy.</summary>
+    public static void WriteAutosave(Project project)
+    {
+        string temp = AutosavePath + ".tmp";
+        project.Save(temp);
+        File.Move(temp, AutosavePath, true);
+    }
+}
