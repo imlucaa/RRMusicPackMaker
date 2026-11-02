@@ -28,6 +28,7 @@ A Windows app for making custom music packs for [Retro Rewind](https://mkwiiki.o
 ## Requirements
 
 - Windows 10 or 11
+- Nothing from Retro Rewind or Wheel Wizard. Every track is built into the app, so you can make a pack for a real Wii on any PC. Pick your Retro Rewind folder to use **Add to Patches**, or if your version is newer than the built-in list
 - [.NET 9 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/9.0), unless you use the NoDotNet download
 
 A short setup window on first launch shows the folders it found and the recommended settings, already chosen, so you can just click **Start**. Everything in it is optional. The app gets these for you, with their checksums verified:
@@ -70,7 +71,7 @@ dotnet test Tests
 
 **Export pack** can also add the pack to Wheel Wizard's Mods list, without copying anything to `Patches` until you launch the game.
 
-**Real Wii with no ISO on your PC:** click **Export pack**, then **Choose folder**, and copy the `RetroRewind6` folder it makes to the root of your SD card. Songs end up in `SD:/RetroRewind6/Patches`, which Retro Rewind loads without My Stuff. The ISO is only used for the optional volume raise.
+**Real Wii with nothing else on your PC:** you don't need Retro Rewind, Wheel Wizard or an ISO. Click **Export pack**, then **Choose folder**, and copy the `RetroRewind6` folder it makes to the root of your SD card. Songs end up in `SD:/RetroRewind6/Patches`, which Retro Rewind loads without My Stuff. The ISO is only used for the optional volume raise.
 
 **No sound in game?** Check that the Music setting in Retro Rewind isn't set to disable music.
 

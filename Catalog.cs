@@ -281,27 +281,37 @@ public static class Catalog
             AliasBases = ["n_BossMI_32"],
         });
 
-        var strmFiles = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        if (string.IsNullOrWhiteSpace(rrRoot) || !Directory.Exists(rrRoot))
+        // Without an install, the list built into the app stands in for it, so a pack
+        // for a real Wii needs nothing from Retro Rewind or Wheel Wizard on this PC.
+        var builtIn = HasTrackList(rrRoot) ? null : BuiltInTracks.Load();
+        if (builtIn == null && !HasTrackList(rrRoot))
         {
             message = "Retro Rewind folder not found. Showing stock slots, menus and fanfares only.";
             return rows;
         }
 
-        string strm = Path.Combine(rrRoot, "strm");
-        if (Directory.Exists(strm))
-            foreach (var file in Directory.GetFiles(strm, "*.brstm"))
-                strmFiles[Path.GetFileNameWithoutExtension(file)] = Path.GetFileNameWithoutExtension(file);
+        var strmFiles = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (string name in builtIn?.MusicFiles ?? InstalledMusicFiles(rrRoot!))
+            strmFiles[name] = name;
 
         var claimed = new HashSet<string>(rows.Select(r => r.FileBase), StringComparer.OrdinalIgnoreCase);
         var usage = new Dictionary<int, List<string>>();
         int trackCount = 0;
         foreach (var (config, category) in new[] { ("ConfigRT.pul", CatRetro), ("ConfigCT.pul", CatCustom), ("ConfigBT.pul", CatBattle) })
         {
-            string path = Path.Combine(rrRoot, "Binaries", config);
-            if (!File.Exists(path))
-                continue;
-            foreach (var track in PulsarConfig.Read(path))
+            IEnumerable<PulsarConfig.Track> tracks;
+            if (builtIn != null)
+            {
+                tracks = builtIn.Tracks.GetValueOrDefault(config, []);
+            }
+            else
+            {
+                string path = Path.Combine(rrRoot!, "Binaries", config);
+                if (!File.Exists(path))
+                    continue;
+                tracks = PulsarConfig.Read(path);
+            }
+            foreach (var track in tracks)
             {
                 string stemN = FindExisting(strmFiles, track.FileStem + "_N", track.FileStem + "_n") ?? track.FileStem + "_N";
                 bool hasOwn = strmFiles.ContainsKey(stemN);
@@ -350,10 +360,20 @@ public static class Catalog
             if (claimed.Add(stem))
                 rows.Add(new TrackRow { Category = CatOther, Name = stem, FileBase = stem, Note = "Music file found in the Retro Rewind strm folder." });
 
-        message = trackCount == 0
-            ? $"No track list found in {Path.Combine(rrRoot, "Binaries")}. Showing stock slots only."
+        message = builtIn != null
+            ? $"Using the built-in list of {trackCount} Retro Rewind {builtIn.Version} tracks. If you have a newer version, pick its folder in Settings."
             : $"Loaded {trackCount} Retro Rewind track music slots.";
         return Organize(rows);
+    }
+
+    /// <summary>True when a folder has a Retro Rewind track list to read.</summary>
+    private static bool HasTrackList(string? rrRoot) =>
+        !string.IsNullOrWhiteSpace(rrRoot) && new[] { "ConfigRT.pul", "ConfigCT.pul", "ConfigBT.pul" }.Any(config => File.Exists(Path.Combine(rrRoot, "Binaries", config)));
+
+    private static IEnumerable<string> InstalledMusicFiles(string rrRoot)
+    {
+        string strm = Path.Combine(rrRoot, "strm");
+        return Directory.Exists(strm) ? Directory.GetFiles(strm, "*.brstm").Select(file => Path.GetFileNameWithoutExtension(file)) : [];
     }
 
     private static string? FindExisting(Dictionary<string, string> files, params string[] names)
@@ -410,6 +430,67 @@ public static class Catalog
                     return candidate;
         }
         return PackBuilder.FindSdCards().FirstOrDefault();
+    }
+}
+
+/// <summary>
+/// A copy of Retro Rewind's track names and music file names, with no audio in it. It lets the app list every
+/// track on a PC with no install. Update it with the track-list command when Retro Rewind adds tracks.
+/// </summary>
+public sealed class BuiltInTracks
+{
+    private const string ResourceName = "RetroRewindTracks.tsv";
+
+    public string Version { get; private init; } = "";
+    public Dictionary<string, List<PulsarConfig.Track>> Tracks { get; } = [];
+    public List<string> MusicFiles { get; } = [];
+
+    /// <summary>Returns null only if the list is missing from the app, and then the stock tracks still show.</summary>
+    public static BuiltInTracks? Load()
+    {
+        using var stream = typeof(BuiltInTracks).Assembly.GetManifestResourceStream(ResourceName);
+        if (stream == null)
+            return null;
+        using var reader = new StreamReader(stream);
+        var list = Parse(reader.ReadToEnd());
+        return list.Tracks.Count > 0 ? list : null;
+    }
+
+    internal static BuiltInTracks Parse(string text)
+    {
+        string version = "";
+        var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(line => line.TrimEnd('\r').Split('\t')).ToList();
+        foreach (var parts in lines.Where(parts => parts[0] == "version" && parts.Length > 1))
+            version = parts[1];
+        var list = new BuiltInTracks { Version = version };
+        foreach (var parts in lines)
+        {
+            if (parts[0] == "music" && parts.Length > 1)
+            {
+                list.MusicFiles.Add(parts[1]);
+            }
+            else if (parts[0] == "track" && parts.Length >= 6)
+            {
+                if (!list.Tracks.TryGetValue(parts[1], out var tracks))
+                    list.Tracks[parts[1]] = tracks = [];
+                tracks.Add(new PulsarConfig.Track(parts[2], parts[3], int.Parse(parts[4], System.Globalization.CultureInfo.InvariantCulture), int.Parse(parts[5], System.Globalization.CultureInfo.InvariantCulture)));
+            }
+        }
+        return list;
+    }
+
+    /// <summary>Writes the list from a real install.</summary>
+    public static string Write(string rrRoot)
+    {
+        var text = new StringBuilder();
+        string versionFile = Path.Combine(rrRoot, "version.txt");
+        text.Append("version\t").Append(File.Exists(versionFile) ? File.ReadAllText(versionFile).Trim() : "").Append('\n');
+        foreach (string config in new[] { "ConfigRT.pul", "ConfigCT.pul", "ConfigBT.pul" })
+            foreach (var track in PulsarConfig.Read(Path.Combine(rrRoot, "Binaries", config)))
+                text.Append($"track\t{config}\t{track.Name}\t{track.FileStem}\t{track.Variant}\t{track.MusicSlot}\n");
+        foreach (string file in Directory.GetFiles(Path.Combine(rrRoot, "strm"), "*.brstm").Order(StringComparer.OrdinalIgnoreCase))
+            text.Append("music\t").Append(Path.GetFileNameWithoutExtension(file)).Append('\n');
+        return text.ToString();
     }
 }
 

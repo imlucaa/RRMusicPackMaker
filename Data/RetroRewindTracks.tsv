@@ -1,0 +1,637 @@
+version	6.13.4
+track	ConfigRT.pul	SNES Mario Circuit 1	0	0	24
+track	ConfigRT.pul	SNES Mario Circuit 1 > SW2 Mario Circuit 1	sw2MC1	1	24
+track	ConfigRT.pul	SNES Donut Plains 1	1	0	24
+track	ConfigRT.pul	SNES Donut Plains 1 > Beta Donut Plains 1	sfcDP1	1	24
+track	ConfigRT.pul	SNES Ghost Valley 1	2	0	25
+track	ConfigRT.pul	SNES Ghost Valley 1 > SW2 Ghost Valley 1	sw2GV1	1	25
+track	ConfigRT.pul	SNES Bowser Castle 1	3	0	30
+track	ConfigRT.pul	SNES Mario Circuit 2	4	0	24
+track	ConfigRT.pul	SNES Mario Circuit 2 > SW2 Mario Circuit 2	sw2MC2	1	24
+track	ConfigRT.pul	SNES Choco Island 1	5	0	26
+track	ConfigRT.pul	SNES Choco Island 1 > SNES Choco Island 1 DX	5_1	1	26
+track	ConfigRT.pul	SNES Ghost Valley 2	6	0	25
+track	ConfigRT.pul	SNES Ghost Valley 2 > SW2 Ghost Valley 2	sw2GV2	1	25
+track	ConfigRT.pul	SNES Donut Plains 2	7	0	24
+track	ConfigRT.pul	SNES Donut Plains 2 > Beta Donut Plains 2	sfcDP2	1	24
+track	ConfigRT.pul	SNES Bowser Castle 2	8	0	30
+track	ConfigRT.pul	SNES Mario Circuit 3	9	0	24
+track	ConfigRT.pul	SNES Mario Circuit 3 > SW2 Mario Circuit 3	sw2MC3	1	24
+track	ConfigRT.pul	SNES Koopa Beach 1	10	0	31
+track	ConfigRT.pul	SNES Choco Island 2	11	0	26
+track	ConfigRT.pul	SNES Choco Island 2 > SNES Choco Island 2 DX	11_1	1	26
+track	ConfigRT.pul	SNES Vanilla Lake 1	12	0	27
+track	ConfigRT.pul	SNES Bowser Castle 3	13	0	30
+track	ConfigRT.pul	SNES Bowser Castle 3 > Tour Bowser Castle 3	trBC3	1	30
+track	ConfigRT.pul	SNES Mario Circuit 4	14	0	24
+track	ConfigRT.pul	SNES Donut Plains 3	15	0	24
+track	ConfigRT.pul	SNES Koopa Beach 2	16	0	31
+track	ConfigRT.pul	SNES Ghost Valley 3	17	0	25
+track	ConfigRT.pul	SNES Ghost Valley 3 > SW2 Ghost Valley 3	sw2GV3	1	25
+track	ConfigRT.pul	SNES Vanilla Lake 2	18	0	27
+track	ConfigRT.pul	SNES Rainbow Road	19	0	13
+track	ConfigRT.pul	SNES Rainbow Road > SNES Rainbow Road U	sfcRR	1	13
+track	ConfigRT.pul	N64 Luigi Raceway	20	0	26
+track	ConfigRT.pul	N64 Moo Moo Farm	21	0	1
+track	ConfigRT.pul	N64 Koopa Troopa Beach	22	0	16
+track	ConfigRT.pul	N64 Kalimari Desert	23	0	21
+track	ConfigRT.pul	N64 Kalimari Desert > SW Kalimari Desert	tKD	1	21
+track	ConfigRT.pul	N64 Toad's Turnpike	24	0	10
+track	ConfigRT.pul	N64 Frappe Snowland	25	0	27
+track	ConfigRT.pul	N64 Choco Mountain	26	0	19
+track	ConfigRT.pul	N64 Choco Mountain > Tour Choco Mountain	trCM	1	19
+track	ConfigRT.pul	N64 Mario Raceway	27	0	26
+track	ConfigRT.pul	N64 Wario Stadium	28	0	18
+track	ConfigRT.pul	N64 Sherbet Land	29	0	27
+track	ConfigRT.pul	N64 Royal Raceway	30	0	26
+track	ConfigRT.pul	N64 Royal Raceway > Wii U Royal Raceway	urRR	1	26
+track	ConfigRT.pul	N64 Bowser's Castle	31	0	28
+track	ConfigRT.pul	N64 DK's Jungle Parkway	32	0	29
+track	ConfigRT.pul	N64 Yoshi Valley	33	0	20
+track	ConfigRT.pul	N64 Banshee Boardwalk	34	0	25
+track	ConfigRT.pul	N64 Rainbow Road	35	0	13
+track	ConfigRT.pul	GBA Peach Circuit	36	0	24
+track	ConfigRT.pul	GBA Peach Circuit > Tour Peach Circuit	trPC	1	24
+track	ConfigRT.pul	GBA Shy Guy Beach	37	0	31
+track	ConfigRT.pul	GBA Riverside Park	38	0	29
+track	ConfigRT.pul	GBA Riverside Park > Tour Riverside Park	trRP	1	29
+track	ConfigRT.pul	GBA Bowser Castle 1	39	0	30
+track	ConfigRT.pul	GBA Mario Circuit	40	0	17
+track	ConfigRT.pul	GBA Mario Circuit > GBA Mario Circuit U	gMC	1	17
+track	ConfigRT.pul	GBA Boo Lake	41	0	25
+track	ConfigRT.pul	GBA Boo Lake > Tour Boo Lake	trBL	1	25
+track	ConfigRT.pul	GBA Cheese Land	42	0	1
+track	ConfigRT.pul	GBA Cheese Land > Wii U Cheese Land	uCL	1	1
+track	ConfigRT.pul	GBA Bowser Castle 2	43	0	30
+track	ConfigRT.pul	GBA Luigi Circuit	44	0	17
+track	ConfigRT.pul	GBA Luigi Circuit > Tour Luigi Circuit	tLC	1	17
+track	ConfigRT.pul	GBA Sky Garden	45	0	2
+track	ConfigRT.pul	GBA Sky Garden > Tour Sky Garden	trSG	1	2
+track	ConfigRT.pul	GBA Cheep-Cheep Island	46	0	31
+track	ConfigRT.pul	GBA Cheep-Cheep Island > Tour Cheep-Cheep Island	trCCI	1	31
+track	ConfigRT.pul	GBA Sunset Wilds	47	0	21
+track	ConfigRT.pul	GBA Sunset Wilds > Tour Sunset Wilds	trSW	1	21
+track	ConfigRT.pul	GBA Snow Land	48	0	27
+track	ConfigRT.pul	GBA Snow Land > Tour Snow Land	trSL	1	27
+track	ConfigRT.pul	GBA Ribbon Road	49	0	33
+track	ConfigRT.pul	GBA Ribbon Road > Wii U Ribbon Road	urRiR	1	33
+track	ConfigRT.pul	GBA Yoshi Desert	50	0	14
+track	ConfigRT.pul	GBA Bowser Castle 3	51	0	30
+track	ConfigRT.pul	GBA Lakeside Park	52	0	29
+track	ConfigRT.pul	GBA Lakeside Park > Tour Lakeside Park	trLP	1	29
+track	ConfigRT.pul	GBA Broken Pier	53	0	25
+track	ConfigRT.pul	GBA Bowser Castle 4	54	0	30
+track	ConfigRT.pul	GBA Bowser Castle 4 > Tour Bowser Castle 4	tBC4	1	30
+track	ConfigRT.pul	GBA Rainbow Road	55	0	13
+track	ConfigRT.pul	GBA Rainbow Road > GBA Rainbow Road DX	55_1	1	13
+track	ConfigRT.pul	GCN Luigi Circuit	56	0	17
+track	ConfigRT.pul	GCN Peach Beach	57	0	16
+track	ConfigRT.pul	GCN Peach Beach > SW2 Peach Beach	sw2PB	1	16
+track	ConfigRT.pul	GCN Baby Park	58	0	37
+track	ConfigRT.pul	GCN Baby Park > Wii U Baby Park	uBP	1	37
+track	ConfigRT.pul	GCN Dry Dry Desert	59	0	14
+track	ConfigRT.pul	GCN Dry Dry Desert > Wii U Dry Dry Desert	urDDD	1	14
+track	ConfigRT.pul	GCN Mushroom Bridge	60	0	26
+track	ConfigRT.pul	GCN Mario Circuit	61	0	17
+track	ConfigRT.pul	GCN Daisy Cruiser	62	0	16
+track	ConfigRT.pul	GCN Waluigi Stadium	63	0	18
+track	ConfigRT.pul	GCN Sherbet Land	64	0	27
+track	ConfigRT.pul	GCN Sherbet Land > Wii U Sherbet Land	uSL	1	27
+track	ConfigRT.pul	GCN Mushroom City	65	0	26
+track	ConfigRT.pul	GCN Yoshi Circuit	66	0	17
+track	ConfigRT.pul	GCN DK Mountain	67	0	19
+track	ConfigRT.pul	GCN Wario Colosseum	68	0	18
+track	ConfigRT.pul	GCN Dino Dino Jungle	69	0	19
+track	ConfigRT.pul	GCN Bowser's Castle	70	0	28
+track	ConfigRT.pul	GCN Rainbow Road	71	0	13
+track	ConfigRT.pul	DS Figure 8 Circuit	72	0	0
+track	ConfigRT.pul	DS Yoshi Falls	73	0	20
+track	ConfigRT.pul	DS Cheep Cheep Beach	74	0	16
+track	ConfigRT.pul	DS Cheep Cheep Beach > Wii U Cheep Cheep Beach	uCCB	1	16
+track	ConfigRT.pul	DS Luigi's Mansion	75	0	25
+track	ConfigRT.pul	DS Desert Hills	76	0	21
+track	ConfigRT.pul	DS Delfino Square	77	0	23
+track	ConfigRT.pul	DS Delfino Square > Beta Delfino Square	dsDS	1	23
+track	ConfigRT.pul	DS Waluigi Pinball	78	0	18
+track	ConfigRT.pul	DS Waluigi Pinball > Beta Waluigi Pinball	dsWP	1	18
+track	ConfigRT.pul	DS Shroom Ridge	79	0	17
+track	ConfigRT.pul	DS Shroom Ridge > SW Shroom Ridge	tSR	1	17
+track	ConfigRT.pul	DS DK Pass	80	0	6
+track	ConfigRT.pul	DS DK Pass > SW2 DK Pass	sw2DKP	1	6
+track	ConfigRT.pul	DS Tick-Tock Clock	81	0	41
+track	ConfigRT.pul	DS Tick-Tock Clock > Wii U Tick-Tock Clock	uTTC	1	41
+track	ConfigRT.pul	DS Mario Circuit	82	0	26
+track	ConfigRT.pul	DS Airship Fortress	83	0	30
+track	ConfigRT.pul	DS Airship Fortress > SW2 Airship Fortress	sw2AF	1	30
+track	ConfigRT.pul	DS Wario Stadium	84	0	18
+track	ConfigRT.pul	DS Wario Stadium > Wii U Wario Stadium	uWS	1	18
+track	ConfigRT.pul	DS Peach Gardens	85	0	22
+track	ConfigRT.pul	DS Peach Gardens > SW Peach Gardens	swPG	1	22
+track	ConfigRT.pul	DS Bowser Castle	86	0	28
+track	ConfigRT.pul	DS Rainbow Road	87	0	13
+track	ConfigRT.pul	Wii Luigi Circuit	88	0	8
+track	ConfigRT.pul	Wii Moo Moo Meadows	89	0	1
+track	ConfigRT.pul	Wii Mushroom Gorge	90	0	2
+track	ConfigRT.pul	Wii Toad's Factory	91	0	4
+track	ConfigRT.pul	Wii Toad's Factory > SW2 Toad's Factory	sw2TF	1	4
+track	ConfigRT.pul	Wii Mario Circuit	92	0	0
+track	ConfigRT.pul	Wii Coconut Mall	93	0	5
+track	ConfigRT.pul	Wii DK Summit	94	0	6
+track	ConfigRT.pul	Wii DK Summit > Tour DK Summit	tDKS	1	6
+track	ConfigRT.pul	Wii Wario's Gold Mine	95	0	7
+track	ConfigRT.pul	Wii Daisy Circuit	96	0	9
+track	ConfigRT.pul	Wii Koopa Cape	97	0	15
+track	ConfigRT.pul	Wii Maple Treeway	98	0	11
+track	ConfigRT.pul	Wii Grumble Volcano	99	0	3
+track	ConfigRT.pul	Wii Dry Dry Ruins	100	0	14
+track	ConfigRT.pul	Wii Moonview Highway	101	0	10
+track	ConfigRT.pul	Wii Bowser's Castle	102	0	12
+track	ConfigRT.pul	Wii Rainbow Road	103	0	13
+track	ConfigRT.pul	3DS Toad Circuit	104	0	0
+track	ConfigRT.pul	3DS Daisy Hills	105	0	1
+track	ConfigRT.pul	3DS Cheep Cheep Lagoon	106	0	16
+track	ConfigRT.pul	3DS Shy Guy Bazaar	107	0	21
+track	ConfigRT.pul	3DS Wuhu Loop	108	0	9
+track	ConfigRT.pul	3DS Mario Circuit	109	0	0
+track	ConfigRT.pul	3DS Music Park	110	0	34
+track	ConfigRT.pul	3DS Rock Rock Mountain	111	0	19
+track	ConfigRT.pul	3DS Piranha Plant Slide	112	0	16
+track	ConfigRT.pul	3DS Wario's Shipyard	113	0	7
+track	ConfigRT.pul	3DS Wario's Shipyard > SW2 Wario's Shipyard	sw2WSY	1	7
+track	ConfigRT.pul	3DS Neo Bowser City	114	0	10
+track	ConfigRT.pul	3DS Maka Wuhu	115	0	9
+track	ConfigRT.pul	3DS DK Jungle	116	0	29
+track	ConfigRT.pul	3DS Rosalina's Ice World	117	0	27
+track	ConfigRT.pul	3DS Bowser's Castle	118	0	28
+track	ConfigRT.pul	3DS Rainbow Road	119	0	13
+track	ConfigRT.pul	Wii U Mario Kart Stadium	uMKS	0	0
+track	ConfigRT.pul	Wii U Water Park	uWP	0	15
+track	ConfigRT.pul	Wii U Sweet Sweet Canyon	uSSC	0	37
+track	ConfigRT.pul	Wii U Thwomp Ruins	uTR	0	6
+track	ConfigRT.pul	Wii U Mario Circuit	uMC	0	26
+track	ConfigRT.pul	Wii U Toad Harbor	uTH	0	23
+track	ConfigRT.pul	Wii U Twisted Mansion	uTM	0	25
+track	ConfigRT.pul	Wii U Sunshine Airport	uSSA	0	8
+track	ConfigRT.pul	Wii U Electrodrome	uE	0	34
+track	ConfigRT.pul	Wii U Cloudtop Cruise	uCC	0	2
+track	ConfigRT.pul	Wii U Bone-Dry Dunes	uBDD	0	21
+track	ConfigRT.pul	Wii U Rainbow Road	uRR	0	13
+track	ConfigRT.pul	Wii U Excitebike Arena	uEA	0	0
+track	ConfigRT.pul	Wii U Dragon Driftway	uDD	0	20
+track	ConfigRT.pul	Wii U Mute City	uMuC	0	26
+track	ConfigRT.pul	Wii U Hyrule Circuit	uHC	0	26
+track	ConfigRT.pul	Wii U Wild Woods	uWW	0	11
+track	ConfigRT.pul	Wii U Animal Crossing	uAC	0	17
+track	ConfigRT.pul	Wii U Super Bell Subway	uSS	0	5
+track	ConfigRT.pul	Wii U Big Blue	uBB	0	15
+track	ConfigRT.pul	SW Sky-High Sundae	swSHS	0	6
+track	ConfigRT.pul	SW Sky-High Sundae > SW2 Sky-High Sundae	sw2SHS	1	6
+track	ConfigRT.pul	Tour Ninja Hideaway	tNH	0	41
+track	ConfigRT.pul	Tour Vancouver Velocity	tVV	0	10
+track	ConfigRT.pul	Tour Singapore Speedway	tSingS	0	10
+track	ConfigRT.pul	Tour Athens Dash	tAD	0	0
+track	ConfigRT.pul	Tour Madrid Drive	tMD	0	26
+track	ConfigRT.pul	RMX Mario Circuit 1	rMC1	0	24
+track	ConfigRT.pul	RMX Choco Island 1	rCI1	0	24
+track	ConfigRT.pul	RMX Choco Island 2	rCI2	0	24
+track	ConfigRT.pul	RMX Rainbow Road 1	rRR1	0	13
+track	ConfigRT.pul	RMX Rainbow Road 2	rRR2	0	13
+track	ConfigRT.pul	RMX Vanilla Lake 1	rVL1	0	27
+track	ConfigRT.pul	RMX Vanilla Lake 2	rVL2	0	27
+track	ConfigRT.pul	RMX Ghost Valley 1	rGV1	0	25
+track	ConfigRT.pul	RMX Bowser Castle 1	rBC1	0	30
+track	ConfigRT.pul	RMX Donut Plains 1	rDP1	0	24
+track	ConfigRT.pul	GP Bananan Ruins	gpBR	0	29
+track	ConfigRT.pul	GP Diamond City	gpDC	0	27
+track	ConfigRT.pul	GP Bowser's Castle	gpBC	0	28
+track	ConfigRT.pul	SW2 Mario Bros Circuit	sw2MBC	0	17
+track	ConfigRT.pul	SW2 Crown City	sw2CC	0	10
+track	ConfigRT.pul	SW2 Whistlestop Summit	sw2WS	0	7
+track	ConfigRT.pul	SW2 DK Spaceport	sw2DKS	0	8
+track	ConfigRT.pul	SW2 Faraway Oasis	sw2FO	0	29
+track	ConfigRT.pul	SW2 Peach Resort	sw2PR	0	16
+track	ConfigRT.pul	SW2 Great ? Block Ruins	sw2QBR	0	2
+track	ConfigRT.pul	SW2 Cheep Cheep Falls	sw2CCF	0	11
+track	ConfigRT.pul	SW2 Dandelion Depths	sw2DD	0	15
+track	ConfigRT.pul	SW2 Boo Cinema	sw2BooC	0	25
+track	ConfigRT.pul	SW2 Ghost Valley	sw2GV	0	25
+track	ConfigRT.pul	SW2 Bowser's Castle	sw2BC	0	12
+track	ConfigRT.pul	SW2 Mario Circuit	sw2MC	0	24
+track	ConfigRT.pul	SW2 Peach Stadium	sw2PS	0	0
+track	ConfigRT.pul	SW2 Rainbow Road	sw2RR	0	13
+track	ConfigRT.pul	Beta Choco Island 3	sfcCI3	0	17
+track	ConfigRT.pul	Beta Nokonoko Beach	dsNB	0	16
+track	ConfigCT.pul	Phendrana Frostbite	Z0	0	4
+track	ConfigCT.pul	Honeymoon Lune	Z1	0	13
+track	ConfigCT.pul	Poké Floats	Z2	0	2
+track	ConfigCT.pul	DK Jungle Tour	Z3	0	29
+track	ConfigCT.pul	Terra Ursae	Z4	0	29
+track	ConfigCT.pul	Confectionery Cliffs	Z5	0	17
+track	ConfigCT.pul	WP Tanks!	Z6	0	41
+track	ConfigCT.pul	Cloud Mist Castle	Z7	0	6
+track	ConfigCT.pul	Rooster Island	Z8	0	17
+track	ConfigCT.pul	Jiyuu Village	Z9	0	23
+track	ConfigCT.pul	Cargo Bay	Z10	0	15
+track	ConfigCT.pul	Jigsaw Circuit	Z11	0	8
+track	ConfigCT.pul	Cruel Angel's Thesis	Z12	0	19
+track	ConfigCT.pul	Bowser's Termination Station	Z13	0	12
+track	ConfigCT.pul	Stargaze Summit	Z14	0	6
+track	ConfigCT.pul	Good Egg Drive	Z15	0	13
+track	ConfigCT.pul	Starry Cityscape	Z16	0	13
+track	ConfigCT.pul	Stickerbush Sunset	Z17	0	2
+track	ConfigCT.pul	Alone and Incomplete	Z18	0	6
+track	ConfigCT.pul	Gallant Grotto	Z19	0	1
+track	ConfigCT.pul	Backside of the TV	Z20	0	17
+track	ConfigCT.pul	Garden of Dreams	Z21	0	22
+track	ConfigCT.pul	Overgrown Temple	Z22	0	29
+track	ConfigCT.pul	Lava Lake	Z23	0	3
+track	ConfigCT.pul	Obstagoon's Palace	Z24	0	28
+track	ConfigCT.pul	Musical Cliff	Z25	0	11
+track	ConfigCT.pul	Luncheon Tour	Z26	0	8
+track	ConfigCT.pul	Shy Guy Lumber Co.	Z27	0	29
+track	ConfigCT.pul	Kamek's Library	Z28	0	28
+track	ConfigCT.pul	Wario Circuit	Z29	0	0
+track	ConfigCT.pul	Sunrise Slopes	Z30	0	6
+track	ConfigCT.pul	Banished Courtyard	Z31	0	22
+track	ConfigCT.pul	Shadow Woods	Z32	0	9
+track	ConfigCT.pul	Hells Dimension	Z33	0	12
+track	ConfigCT.pul	Botania	Z34	0	1
+track	ConfigCT.pul	Cascade Kingdom	Z35	0	19
+track	ConfigCT.pul	Sandcastle Park	Z36	0	14
+track	ConfigCT.pul	Emerald Coast	Z37	0	16
+track	ConfigCT.pul	Super Bell Circuit	Z38	0	26
+track	ConfigCT.pul	Midnight Museum	Z39	0	29
+track	ConfigCT.pul	Crystal Canopy	Z40	0	29
+track	ConfigCT.pul	Shy Guy Skies	Z41	0	2
+track	ConfigCT.pul	Forgotten Facility	Z42	0	4
+track	ConfigCT.pul	Kitayama Keep	Z43	0	22
+track	ConfigCT.pul	Dolphin Harbor	Z44	0	23
+track	ConfigCT.pul	Aqua Dungeon	Z45	0	28
+track	ConfigCT.pul	Divine Paradise	Z46	0	15
+track	ConfigCT.pul	Moonlit Grounds	Z47	0	10
+track	ConfigCT.pul	Frigid Freezeway	Z48	0	27
+track	ConfigCT.pul	Honeyhive Falls	Z49	0	11
+track	ConfigCT.pul	Heavenly Sanctuary	Z50	0	17
+track	ConfigCT.pul	Luigi's Island	Z51	0	26
+track	ConfigCT.pul	Mystic Tangle	Z52	0	29
+track	ConfigCT.pul	Maplewood Caverns	Z53	0	11
+track	ConfigCT.pul	Fiery Factory, Fading Frost	Z54	0	3
+track	ConfigCT.pul	Sunset Forest	Z55	0	1
+track	ConfigCT.pul	Pandora Palace	Z56	0	8
+track	ConfigCT.pul	Comet Starway	Z57	0	13
+track	ConfigCT.pul	The Seamlands	Z58	0	13
+track	ConfigCT.pul	Northern Heights	Z59	0	6
+track	ConfigCT.pul	Thunder City	Z60	0	10
+track	ConfigCT.pul	Propeller Paradise	Z61	0	2
+track	ConfigCT.pul	µTorrent's Divinity	Z62	0	28
+track	ConfigCT.pul	Ghostly Gulch	Z63	0	25
+track	ConfigCT.pul	Cubing Conundrum	Z64	0	13
+track	ConfigCT.pul	Daisy Gardens	Z65	0	22
+track	ConfigCT.pul	Lunar Lights	Z66	0	13
+track	ConfigCT.pul	Fruity Folly	Z67	0	6
+track	ConfigCT.pul	Thunder Canyon	Z68	0	7
+track	ConfigCT.pul	Fungal Jungle	Z69	0	29
+track	ConfigCT.pul	Cherry Blossom Garden	Z70	0	22
+track	ConfigCT.pul	Vile Isle	Z71	0	25
+track	ConfigCT.pul	Blizzerno Fortress	Z72	0	27
+track	ConfigCT.pul	Desert Fort	Z73	0	14
+track	ConfigCT.pul	Mushlight's Reprise	Z74	0	2
+track	ConfigCT.pul	Call of the Glassheart	Z75	0	11
+track	ConfigCT.pul	Anthill & Apian Apts.	Z76	0	22
+track	ConfigCT.pul	Hot Air Skyway	Z77	0	2
+track	ConfigCT.pul	Redwood Village	Z78	0	11
+track	ConfigCT.pul	Bubblegum Skyline	Z79	0	41
+track	ConfigCT.pul	Cool Shroom Castle	Z80	0	2
+track	ConfigCT.pul	Stereo Madness	Z81	0	24
+track	ConfigCT.pul	Neuron Jungle	Z82	0	29
+track	ConfigCT.pul	Digital Refinery	Z83	0	4
+track	ConfigCT.pul	Lunar Lantern Festival	Z84	0	3
+track	ConfigCT.pul	Green Hill Zone	Z85	0	0
+track	ConfigCT.pul	Honeybee Hideout	Z86	0	11
+track	ConfigCT.pul	Welkin Cluster	Z87	0	22
+track	ConfigCT.pul	Parallel Paradise	Z88	0	25
+track	ConfigCT.pul	Dark Matter Fortress	Z89	0	28
+track	ConfigCT.pul	Glistening Highway	Z90	0	13
+track	ConfigCT.pul	Kinoko Cave	Z91	0	2
+track	ConfigCT.pul	Icecream Sweetland	Z92	0	6
+track	ConfigCT.pul	Toxic Mushroom Falls	Z93	0	2
+track	ConfigCT.pul	Thump Bump Forest	Z94	0	25
+track	ConfigCT.pul	Area 64	Z95	0	25
+track	ConfigCT.pul	Bowser's Flooded Castle	Z96	0	30
+track	ConfigCT.pul	Conkdor Ruins	Z97	0	14
+track	ConfigCT.pul	Spike Desert	Z98	0	14
+track	ConfigCT.pul	Crash Cove	Z99	0	29
+track	ConfigCT.pul	Infernal Pipeyard	Z100	0	3
+track	ConfigCT.pul	HellValley	Z101	0	28
+track	ConfigCT.pul	frutiger_course	Z102	0	16
+track	ConfigCT.pul	Shy Guy Spelunking	Z103	0	7
+track	ConfigCT.pul	Eventide Gorge	Z104	0	2
+track	ConfigCT.pul	Funky Kongdom	Z105	0	19
+track	ConfigCT.pul	Skyline Avenue	Z106	0	10
+track	ConfigCT.pul	Toadette's Castle	Z107	0	12
+track	ConfigCT.pul	Big Shell Bay	Z108	0	15
+track	ConfigCT.pul	Dreamer	Z109	0	13
+track	ConfigCT.pul	Magmatic Sanctuary	Z110	0	28
+track	ConfigCT.pul	Jungle Fortress	Z111	0	29
+track	ConfigCT.pul	Muncher Mesa	Z112	0	14
+track	ConfigCT.pul	Fettuccine Falls	Z113	0	16
+track	ConfigCT.pul	Frosty Village	Z114	0	6
+track	ConfigCT.pul	Waluigi's Taco Stand	Z115	0	21
+track	ConfigCT.pul	Promise of Annalise	Z116	0	13
+track	ConfigCT.pul	Biometal Blitz	Z117	0	8
+track	ConfigCT.pul	Pianta Shore	Z118	0	16
+track	ConfigCT.pul	Citro's Wedding Altar	Z119	0	22
+track	ConfigCT.pul	Waluigi Circuit	Z120	0	0
+track	ConfigCT.pul	Tropical Cloudway	Z121	0	2
+track	ConfigCT.pul	The Frozen Lakes of Steleah	Z122	0	27
+track	ConfigCT.pul	Hazy Lazy Desert	Z123	0	14
+track	ConfigCT.pul	Dark Matter Shrine	Z124	0	13
+track	ConfigCT.pul	The Dashlands	Z125	0	8
+track	ConfigCT.pul	Desert Creek	Z126	0	14
+track	ConfigCT.pul	Interstellar Laboratory	Z127	0	13
+track	ConfigCT.pul	Cool Castle Canyon	Z128	0	15
+track	ConfigCT.pul	Haunted Woods	Z129	0	25
+track	ConfigCT.pul	Coral Isle	Z130	0	15
+track	ConfigCT.pul	White Land	Z131	0	27
+track	ConfigCT.pul	Scrapheap Trail	Z132	0	18
+track	ConfigCT.pul	Jungle Cliff	Z133	0	29
+track	ConfigCT.pul	Poltergeist Pass	Z134	0	25
+track	ConfigCT.pul	Wailing World	Z135	0	13
+track	ConfigCT.pul	Nivurbia	Z136	0	27
+track	ConfigCT.pul	King Dedede's Castle	Z137	0	0
+track	ConfigCT.pul	Darkest Night	Z138	0	25
+track	ConfigCT.pul	Superstar Dystopia	Z139	0	13
+track	ConfigBT.pul	SNES Battle Course 4	old_battle4_sfc	0	39
+track	ConfigBT.pul	SNES Mario Circuit 1	sfcMC1	0	39
+track	ConfigBT.pul	SNES Vanilla Lake 2	sfcVL2	0	39
+track	ConfigBT.pul	N64 Big Donut	n64BD	0	41
+track	ConfigBT.pul	N64 Block Fort	n64BF	0	41
+track	ConfigBT.pul	N64 Double Deck	n64DD	0	41
+track	ConfigBT.pul	N64 Skyscraper	old_matenro_64	0	41
+track	ConfigBT.pul	N64 Banshee Boardwalk	n64BB	0	41
+track	ConfigBT.pul	GBA Battle Course 1	gBC1	0	40
+track	ConfigBT.pul	GBA Battle Course 2	gBC2	0	40
+track	ConfigBT.pul	GBA Battle Course 3	old_battle3_gba	0	40
+track	ConfigBT.pul	GBA Battle Course 4	gBC4	0	40
+track	ConfigBT.pul	GCN Cookie Land	old_cookieland_gc	0	37
+track	ConfigBT.pul	GCN Block City	GCNBC	0	37
+track	ConfigBT.pul	GCN Nintendo GameCube	gcnGC	0	37
+track	ConfigBT.pul	GCN Pipe Plaza	gcnPP	0	37
+track	ConfigBT.pul	GCN Baby Park	gcnBP	0	37
+track	ConfigBT.pul	GCN Bowser's Castle	gcnBoC	0	37
+track	ConfigBT.pul	DS Nintendo DS	dsbDS	0	38
+track	ConfigBT.pul	DS Twilight House	old_house_ds	0	38
+track	ConfigBT.pul	DS Palm Shore	dsPS	0	38
+track	ConfigBT.pul	DS Tart Top	dsTT	0	38
+track	ConfigBT.pul	DS Water Stage	dsWS	0	38
+track	ConfigBT.pul	DS Lava Arena	dsLA	0	38
+track	ConfigBT.pul	DS Tick-Tock Clock	dsTTC	0	38
+track	ConfigBT.pul	Wii Block Plaza	block_battle	0	33
+track	ConfigBT.pul	Wii Delfino Pier	venice_battle	0	32
+track	ConfigBT.pul	Wii Funky Stadium	skate_battle	0	35
+track	ConfigBT.pul	Wii Chain Chomp Wheel	casino_battle	0	34
+track	ConfigBT.pul	Wii Thwomp Desert	sand_battle	0	36
+track	ConfigBT.pul	Wii Galaxy Colosseum	wGC	0	41
+track	ConfigBT.pul	Wii Moo Moo Meadows	wMMM	0	39
+track	ConfigBT.pul	Wii Coconut Mall	wCM	0	32
+track	ConfigBT.pul	Wii Rainbow Road	wRR	0	35
+track	ConfigBT.pul	3DS Honeybee Hive	3dsHH	0	40
+track	ConfigBT.pul	3DS Daisy Hills	3dsDH	0	32
+track	ConfigBT.pul	Wii U Animal Crossing	uACB	0	32
+track	ConfigBT.pul	SW Battle Stadium	sBS	0	39
+track	ConfigBT.pul	Tour Paris Promenade B	tPPB	0	32
+track	ConfigBT.pul	Beta Nokonoko Beach	dsNBB	0	32
+music	0_N
+music	104_N
+music	105_N
+music	106_N
+music	107_N
+music	108_N
+music	109_N
+music	10_N
+music	110_N
+music	111_N
+music	112_N
+music	113_N
+music	114_N
+music	115_N
+music	116_N
+music	117_N
+music	118_N
+music	119_N
+music	11_1_N
+music	11_N
+music	12_N
+music	13_N
+music	14_N
+music	15_N
+music	16_N
+music	17_N
+music	18_N
+music	19_N
+music	1_N
+music	20_N
+music	21_N
+music	22_N
+music	23_N
+music	24_N
+music	25_N
+music	26_N
+music	28_N
+music	2_N
+music	30_N
+music	33_N
+music	34_N
+music	35_N
+music	36_N
+music	38_N
+music	39_N
+music	3dsDH_N
+music	3dsHH_N
+music	3_N
+music	40_N
+music	41_N
+music	42_N
+music	43_N
+music	44_N
+music	45_N
+music	46_N
+music	47_N
+music	48_N
+music	49_N
+music	4_N
+music	50_N
+music	52_N
+music	53_N
+music	54_N
+music	55_1_N
+music	55_Final
+music	55_N
+music	56_N
+music	58_Final
+music	58_N
+music	59_N
+music	5_1_N
+music	5_N
+music	60_N
+music	62_N
+music	64_N
+music	65_N
+music	66_N
+music	68_N
+music	69_N
+music	70_N
+music	71_N
+music	72_N
+music	74_N
+music	75_N
+music	78_N
+music	79_N
+music	7_N
+music	80_N
+music	81_N
+music	82_N
+music	83_N
+music	84_N
+music	86_N
+music	87_N
+music	8_N
+music	dsbDS_N
+music	dsDS_N
+music	dsLA_N
+music	dsNBB_N
+music	dsNB_N
+music	dsPS_N
+music	dsTTC_N
+music	dsTT_N
+music	dsWP_N
+music	dsWS_N
+music	gBC1_N
+music	gBC2_N
+music	gBC4_N
+music	gcnBC_n
+music	gcnBoC_N
+music	gcnBP_N
+music	gcnGC_N
+music	gcnPP_N
+music	gMC_N
+music	gpBC_N
+music	gpBR_N
+music	gpDC_N
+music	MissionBoss
+music	MissionRun
+music	n64BB_N
+music	n64BD_N
+music	n64BF_N
+music	n64DD_N
+music	o_FanfareRRGP1_32
+music	rBC1_N
+music	rCI1_N
+music	rCI2_N
+music	rDP1_N
+music	rGV1_N
+music	rMC1_N
+music	rRR1_N
+music	rRR2_N
+music	rVL1_N
+music	rVL2_N
+music	sBS_N
+music	sfcCI3_N
+music	sfcDP1_N
+music	sfcDP2_N
+music	sfcMC1_N
+music	sfcRR_N
+music	sfcVL2_N
+music	sw2AF_N
+music	sw2BC_N
+music	sw2BooC_N
+music	sw2CCF_N
+music	sw2CC_N
+music	sw2DD_N
+music	sw2DKP_N
+music	sw2DKS_N
+music	sw2FO_N
+music	sw2GV1_N
+music	sw2GV2_N
+music	sw2GV3_N
+music	sw2GV_N
+music	sw2MBC_N
+music	sw2MC1_N
+music	sw2MC2_N
+music	sw2MC3_N
+music	sw2MC_N
+music	sw2PB_N
+music	sw2PR_N
+music	sw2PS_N
+music	sw2QBR_N
+music	sw2RR_Final
+music	sw2RR_N-1
+music	sw2RR_N-2
+music	sw2RR_N-3
+music	sw2RR_N
+music	sw2RR_N2
+music	sw2RR_N3
+music	sw2RR_o_FanfareGP1_32
+music	sw2SHS_N
+music	sw2TF_N
+music	sw2WSY_N
+music	sw2WS_N
+music	swPG_N
+music	swSHS_N
+music	tAD_N
+music	tBC4_N
+music	tDKS_N
+music	tKD_N
+music	tLC_N
+music	tMD_N
+music	tNH_N
+music	tPPB_N
+music	trBC3_N
+music	trBL_N
+music	trCCI_N
+music	trCM_N
+music	trLP_N
+music	trPC_N
+music	trRP_N
+music	trSG_N
+music	trSL_N
+music	trSW_N
+music	tSingS_N
+music	tSR_N
+music	tVV_N
+music	uACB_N
+music	uAC_N
+music	uBB_Final
+music	uBB_N
+music	uBDD_N
+music	uBP_Final
+music	uBP_N
+music	uCCB_N
+music	uCC_N
+music	uCL_N
+music	uDD_N
+music	uEA_N
+music	uE_N
+music	uHC_N
+music	uMC_N
+music	uMKS_N
+music	uMuC_N
+music	urDDD_N
+music	urRiR_N
+music	urRR_N
+music	uRR_N
+music	uSL_N
+music	uSSA_N
+music	uSSC_N
+music	uSS_N
+music	uTH_N
+music	uTM_N
+music	uTR_N
+music	uTTC_N
+music	uWP_N
+music	uWS_N
+music	uWW_N
+music	wCM_N
+music	wGC_N
+music	wMMM_N
+music	wRR_N

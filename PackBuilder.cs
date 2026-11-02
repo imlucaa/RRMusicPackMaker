@@ -651,11 +651,15 @@ public static class PackBuilder
     /// </summary>
     public static List<string> ModsFolders()
     {
-        var settings = AppStorage.LoadSettings();
-        if (!settings.UseWheelWizard)
-            return [];
         if (Environment.GetEnvironmentVariable("RRMUSIC_MODS") is { Length: > 0 } custom)
             return [custom];
+        return ModsFolders(AppStorage.LoadSettings());
+    }
+
+    internal static List<string> ModsFolders(AppSettings settings)
+    {
+        if (!settings.UseWheelWizard)
+            return [];
 
         var folders = new List<string>();
         if (settings.ModsFolder is { Length: > 0 } chosen)

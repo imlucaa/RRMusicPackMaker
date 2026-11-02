@@ -710,6 +710,8 @@ public sealed class MainForm : Form
     /// <summary>The file this track plays right now: from the pack if it's installed, otherwise Retro Rewind's own.</summary>
     internal string? CurrentMusicFile(TrackRow row)
     {
+        if (_options.RetroRewindFolder.Length == 0)
+            return null;
         foreach (string folder in new[] { "Patches", "strm" })
         {
             string path = Path.Combine(_options.RetroRewindFolder, folder, row.FileBase + ".brstm");
@@ -2384,7 +2386,7 @@ public sealed class SettingsForm : Form
 {
     private readonly Options _options;
     private readonly AppSettings _settings;
-    private readonly FieldBox _rrFolder = new("Not set. Only stock tracks and menus show.") { Width = 300 };
+    private readonly FieldBox _rrFolder = new("Not needed. The built-in track list is used.") { Width = 300 };
     private readonly FieldBox _output = new() { Width = 300 };
     private readonly FieldBox _mods = new("Found automatically") { Width = 300 };
     private readonly FlatCheck _useWheelWizard = new() { Text = "Add packs to Wheel Wizard", AutoSize = true };
@@ -2455,7 +2457,7 @@ public sealed class SettingsForm : Form
         _multi.Checked = options.MultiChannelSlots;
         _final.Checked = options.StockFinalLapFiles;
 
-        Add("Retro Rewind folder (lists every track)", _rrFolder, Browse(_rrFolder, "Pick the RetroRewind6 folder"), Clear(_rrFolder));
+        Add("Retro Rewind folder (only needed for Add to Patches, or if your version is newer)", _rrFolder, Browse(_rrFolder, "Pick the RetroRewind6 folder"), Clear(_rrFolder));
         _mods.Box.ReadOnly = true;
         _mods.Box.Text = settings.ModsFolder;
         Add("Wheel Wizard Mods folder", _mods, Browse(_mods, "Pick Wheel Wizard's Mods folder"), Clear(_mods));

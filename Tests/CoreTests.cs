@@ -43,6 +43,55 @@ public class CatalogTests
         Assert.Equal(final, Catalog.FinalNameOf(normal));
 
     [Fact]
+    public void Build_WithoutInstall_ListsEveryRetroRewindTrack()
+    {
+        var rows = Catalog.Build(null, out string message);
+
+        Assert.Contains("built-in", message);
+        Assert.True(rows.Count(row => row.Category == Catalog.CatRegs) == 32);
+        Assert.True(rows.Count(row => row.Category == Catalog.CatRetro) > 150);
+        Assert.True(rows.Count(row => row.Category == Catalog.CatCustom) > 100);
+        Assert.True(rows.Count(row => row.Category == Catalog.CatBattle) > 20);
+        Assert.Contains(rows, row => row.Name == "SW2 Ghost Valley 2" && row.Platform == "SW2" && row.Note.StartsWith("Version of SNES Ghost Valley 2"));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(@"C:\\no\\such\\folder")]
+    public void Build_NoUsableFolder_AllUseTheBuiltInList(string? folder)
+    {
+        Catalog.Build(folder, out string message);
+        Assert.Contains("built-in", message);
+    }
+
+    [Fact]
+    public void Build_AFolderWithATrackList_IsReadInsteadOfTheBuiltInOne()
+    {
+        string folder = Path.Combine(Path.GetTempPath(), "rrm_list_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(folder, "Binaries"));
+        try
+        {
+            // A damaged list is reported, which shows the folder's list was the one being read.
+            File.WriteAllBytes(Path.Combine(folder, "Binaries", "ConfigRT.pul"), new byte[64]);
+            Assert.Throws<InvalidDataException>(() => Catalog.Build(folder, out _));
+        }
+        finally
+        {
+            Directory.Delete(folder, true);
+        }
+    }
+
+    [Fact]
+    public void BuiltInTracks_ReadsItsOwnFormat_AndSkipsBadLines()
+    {
+        var list = BuiltInTracks.Parse("version\t6.13.4\r\ntrack\tConfigRT.pul\tWii X\tstem\t0\t8\nmusic\t1_N\nnonsense\n");
+        Assert.Equal("6.13.4", list.Version);
+        Assert.Equal(new PulsarConfig.Track("Wii X", "stem", 0, 8), Assert.Single(list.Tracks["ConfigRT.pul"]));
+        Assert.Equal(["1_N"], list.MusicFiles);
+    }
+
+    [Fact]
     public void Build_WithoutInstall_StillListsSheetFiles()
     {
         var rows = Catalog.Build(null, out _);
