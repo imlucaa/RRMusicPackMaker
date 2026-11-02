@@ -271,6 +271,10 @@ internal static class Program
                 Console.WriteLine($"Built {result.Built}, failed {result.Failed}, encoded {result.Encoded}");
                 return result.Failed == 0 ? 0 : 1;
             }
+            case "track-list":
+                // Writes the built-in track list from the Retro Rewind install on this PC.
+                File.WriteAllText(args[1], BuiltInTracks.Write(Catalog.DetectRetroRewind() ?? throw new DirectoryNotFoundException("Retro Rewind wasn't found.")), new System.Text.UTF8Encoding(false));
+                return 0;
             case "screenshot-import":
             {
                 ApplicationConfiguration.Initialize();

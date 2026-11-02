@@ -54,9 +54,9 @@ public class SetupFormTests : IDisposable
     [Fact]
     public void WheelWizard_TurnedOff_FindsNoMods()
     {
-        Assert.NotEmpty(PackBuilder.ModsFolders());
-        AppStorage.SaveSettings(new AppSettings { UseWheelWizard = false });
-        Assert.Empty(PackBuilder.ModsFolders());
+        string chosen = Path.Combine(_data, "Mods");
+        Assert.Contains(chosen, PackBuilder.ModsFolders(new AppSettings { ModsFolder = chosen }));
+        Assert.Empty(PackBuilder.ModsFolders(new AppSettings { ModsFolder = chosen, UseWheelWizard = false }));
     }
 
     [Fact]
@@ -167,7 +167,7 @@ public class SetupFormTests : IDisposable
         using var form = new SetupForm(new Options { RetroRewindFolder = "" }, new AppSettings()) { StartPosition = FormStartPosition.Manual, Location = new Point(-5000, -5000) };
         form.Show();
         Application.DoEvents();
-        Assert.Contains("Not found", form.RetroRewindStatusForTest);
+        Assert.Contains("built-in track list", form.RetroRewindStatusForTest);
         form.Close();
     });
 

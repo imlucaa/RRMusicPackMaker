@@ -153,11 +153,11 @@ public sealed class SetupForm : Form
         _start.Invalidate();
 
         bool hasRr = IsRetroRewindFolder(_options.RetroRewindFolder);
-        _rrStatus.Text = hasRr ? $"✓  {ShortPath(_options.RetroRewindFolder)}" : "Not found. That's fine, you'll just see fewer tracks.";
+        _rrStatus.Text = hasRr ? $"✓  {ShortPath(_options.RetroRewindFolder)}" : "Not needed. The built-in track list is used, and you can export for a real Wii.";
         _pickRr.Text = hasRr ? "Change" : "Browse";
 
         string? mods = _settings.ModsFolder.Length > 0 ? _settings.ModsFolder : PackBuilder.ModsFolders().FirstOrDefault();
-        _modsStatus.Text = mods != null ? $"✓  {ShortPath(mods)}" : "Not found. That's fine if you play on a real Wii.";
+        _modsStatus.Text = mods != null ? $"✓  {ShortPath(mods)}" : "Not found. It's not needed for a real Wii or Dolphin.";
         _pickMods.Text = mods != null ? "Change" : "Browse";
 
         _outputStatus.Text = $"✓  {ShortPath(_settings.OutputFolder.Length > 0 ? _settings.OutputFolder : AppStorage.DefaultOutputFolder)}";
