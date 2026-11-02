@@ -90,6 +90,12 @@ public static class Catalog
         ("Advanced", [CatStock, CatStockBattle, CatOther]),
     ];
 
+    /// <summary>
+    /// Categories kept off the sidebar. Their rows stay in the list, because imported packs often use the
+    /// stock file names, and those songs still need somewhere to go. They show under All tracks and in search.
+    /// </summary>
+    public static readonly string[] HiddenFromSidebar = [CatStock, CatStockBattle];
+
     // Oldest console first. "Wii U" is listed before "Wii" in the lookup below so it matches first.
     private static readonly string[] PlatformOrder = ["SNES", "N64", "GBA", "GCN", "DS", "Wii", "3DS", "Wii U", "Tour", "GP", "SW2", "SW", "RMX", "Beta"];
     private static readonly string[] PlatformLookup = ["Wii U", "SNES", "N64", "GBA", "GCN", "DS", "Wii", "3DS", "Tour", "GP", "SW2", "SW", "RMX", "Beta"];

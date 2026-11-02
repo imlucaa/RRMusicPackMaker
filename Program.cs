@@ -202,10 +202,7 @@ internal static class Program
             {
                 ApplicationConfiguration.Initialize();
                 string? project = Option(args, "--project");
-                string? theme = Option(args, "--theme");
                 using var form = new MainForm();
-                if (theme != null && (theme == "dark") != Theme.Current.IsDark)
-                    form.ToggleTheme();
                 form.StartPosition = FormStartPosition.Manual;
                 form.Location = new Point(-5000, -5000);
                 form.Show();
@@ -227,8 +224,6 @@ internal static class Program
             {
                 ApplicationConfiguration.Initialize();
                 using var form = new MainForm();
-                if (Option(args, "--theme") is { } theme && (theme == "dark") != Theme.Current.IsDark)
-                    form.ToggleTheme();
                 form.StartPosition = FormStartPosition.Manual;
                 form.Location = new Point(-5000, -5000);
                 form.Show();
@@ -278,7 +273,6 @@ internal static class Program
             case "screenshot-import":
             {
                 ApplicationConfiguration.Initialize();
-                Theme.Set(Option(args, "--theme") != "light");
                 using var import = new ImportPackForm(PackImporter.FindInstalled(Catalog.DetectRetroRewind() ?? "", PackBuilder.ModsFolders(), AppStorage.DefaultOutputFolder), _ => true);
                 import.StartPosition = FormStartPosition.Manual;
                 import.Location = new Point(-5000, -5000);
@@ -292,8 +286,6 @@ internal static class Program
             {
                 ApplicationConfiguration.Initialize();
                 using var form = new MainForm();
-                if (Option(args, "--theme") is { } theme && (theme == "dark") != Theme.Current.IsDark)
-                    form.ToggleTheme();
                 form.StartPosition = FormStartPosition.Manual;
                 form.Location = new Point(-5000, -5000);
                 form.Show();
@@ -318,7 +310,6 @@ internal static class Program
             case "screenshot-download":
             {
                 ApplicationConfiguration.Initialize();
-                Theme.Set(Option(args, "--theme") == "dark");
                 using var download = new DownloadForm(Path.GetTempPath(), 1);
                 download.StartPosition = FormStartPosition.Manual;
                 download.Location = new Point(-5000, -5000);
@@ -335,7 +326,6 @@ internal static class Program
             {
                 // Runs first-run setup with a real install, without anyone clicking.
                 ApplicationConfiguration.Initialize();
-                Theme.Set(Option(args, "--theme") != "light");
                 using var setup = new SetupForm(new Options { RetroRewindFolder = Catalog.DetectRetroRewind() ?? "" }, new AppSettings());
                 setup.StartPosition = FormStartPosition.Manual;
                 setup.Location = new Point(-5000, -5000);
@@ -360,7 +350,6 @@ internal static class Program
             case "screenshot-export":
             {
                 ApplicationConfiguration.Initialize();
-                Theme.Set(Option(args, "--theme") != "light");
                 using var export = new ExportForm(wheelWizardFound: true);
                 export.StartPosition = FormStartPosition.Manual;
                 export.Location = new Point(-5000, -5000);
@@ -373,7 +362,6 @@ internal static class Program
             case "screenshot-settings":
             {
                 ApplicationConfiguration.Initialize();
-                Theme.Set(Option(args, "--theme") == "dark");
                 using var settings = new SettingsForm(new Options(), new AppSettings());
                 settings.StartPosition = FormStartPosition.Manual;
                 settings.Location = new Point(-5000, -5000);
@@ -386,7 +374,6 @@ internal static class Program
             case "screenshot-editor":
             {
                 ApplicationConfiguration.Initialize();
-                Theme.Set(Option(args, "--theme") == "dark");
                 using var editor = new LoopEditorForm(new TrackRow { Name = "Title screen / main menu", FileBase = "title_bg", Source = args[2] });
                 editor.StartPosition = FormStartPosition.Manual;
                 editor.Location = new Point(-5000, -5000);

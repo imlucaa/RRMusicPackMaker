@@ -370,14 +370,14 @@ public static class PackImporter
 public sealed class ImportPackForm : Form
 {
     private readonly SideList _installed = new() { Dock = DockStyle.Fill, Tag = Theme.PanelTag };
-    private readonly ModernButton _import = new() { Text = "Import this pack", Tag = Theme.AccentTag, AutoSize = true, Height = 32 };
-    private readonly ModernButton _folder = new() { Text = "Choose folder", AutoSize = true, Height = 32, Margin = new Padding(0, 0, 6, 0) };
-    private readonly ModernButton _zip = new() { Text = "Choose zip", AutoSize = true, Height = 32, Margin = new Padding(0, 0, 6, 0) };
-    private readonly ModernButton _files = new() { Text = "Choose files", AutoSize = true, Height = 32, Margin = new Padding(0) };
-    private readonly ModernButton _delete = new() { Text = "Delete", AutoSize = true, Height = 32, Margin = new Padding(0, 0, 6, 0) };
+    private readonly ModernButton _import = new() { Text = "Import this pack", Tag = Theme.AccentTag, AutoSize = true, Height = 28 };
+    private readonly ModernButton _folder = new() { Text = "Choose folder", AutoSize = true, Height = 28, Margin = new Padding(0, 0, 6, 0) };
+    private readonly ModernButton _zip = new() { Text = "Choose zip", AutoSize = true, Height = 28, Margin = new Padding(0, 0, 6, 0) };
+    private readonly ModernButton _files = new() { Text = "Choose files", AutoSize = true, Height = 28, Margin = new Padding(0) };
+    private readonly ModernButton _delete = new() { Text = "Delete", AutoSize = true, Height = 28, Margin = new Padding(0, 0, 6, 0) };
     private readonly Func<InstalledPack, bool>? _deletePack;
     private readonly Label _currentTitle;
-    private readonly ModernButton _cancel = new() { Text = "Cancel", AutoSize = true, Height = 32 };
+    private readonly ModernButton _cancel = new() { Text = "Cancel", AutoSize = true, Height = 28 };
     private readonly List<InstalledPack> _packs;
 
     /// <summary>The folder or zip that was picked.</summary>

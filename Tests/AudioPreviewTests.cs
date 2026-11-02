@@ -261,7 +261,7 @@ public sealed class AudioPreviewTests : IDisposable
         Directory.CreateDirectory(folder);
         string song = Path.Combine(folder, "quiet.wav");
         File.Move(Silence(20), song);
-        AppStorage.SaveSettings(new AppSettings { Theme = "Dark", OutputFolder = Path.Combine(_data, "packs") });
+        AppStorage.SaveSettings(new AppSettings { OutputFolder = Path.Combine(_data, "packs") });
         using var form = new MainForm { StartPosition = FormStartPosition.Manual, Location = new Point(-5000, -5000) };
         form.Show();
         form.ShowSongs();
@@ -325,7 +325,7 @@ public sealed class AudioPreviewTests : IDisposable
     [Fact]
     public void ImportedPackSongs_CanBeHeard_OnTheSongsTabAndTheirTrack() => OnUiThread(() =>
     {
-        AppStorage.SaveSettings(new AppSettings { Theme = "Dark", OutputFolder = Path.Combine(_data, "packs") });
+        AppStorage.SaveSettings(new AppSettings { OutputFolder = Path.Combine(_data, "packs") });
         using var form = new MainForm { StartPosition = FormStartPosition.Manual, Location = new Point(-5000, -5000) };
         form.Show();
         Application.DoEvents();

@@ -20,63 +20,88 @@ public sealed record Palette(
     Color Good,
     Color Bad,
     Color Wave,
-    Color LoopFill);
+    Color LoopFill,
+    Color Hover,
+    Color Strong);
 
-/// <summary>Colors for the whole app. Controls pick their look from their Tag: accent, muted, title, panel or line.</summary>
+/// <summary>
+/// The app's look, in one place. One black theme in the style of a desktop music player: flat panels
+/// split by thin lines, compact rows, and a single amber accent for what's selected or playing.
+/// Controls pick their style from their Tag: accent, ghost, active, muted, title, panel or line.
+/// </summary>
 public static class Theme
 {
     public const string AccentTag = "accent";
+
+    /// <summary>A quiet button with no box until it's hovered, for choices inside a group like the page tabs.</summary>
+    public const string GhostTag = "ghost";
+
+    /// <summary>The chosen one of a group of ghost buttons: plain text with a white line under it.</summary>
+    public const string ActiveTag = "active";
     public const string MutedTag = "muted";
     public const string TitleTag = "title";
     public const string PanelTag = "panel";
     public const string LineTag = "line";
 
-    public static readonly Palette Light = new(
-        false,
-        Color.White,
-        Color.FromArgb(249, 249, 249),
-        Color.White,
-        Color.FromArgb(229, 229, 229),
-        Color.Black,
-        Color.FromArgb(112, 112, 112),
-        Color.Black,
-        Color.FromArgb(48, 48, 48),
-        Color.White,
-        Color.FromArgb(235, 235, 235),
-        Color.Black,
-        Color.Black,
-        Color.FromArgb(200, 30, 30),
-        Color.FromArgb(120, 120, 120),
-        Color.FromArgb(226, 226, 226));
-
+    // Black with near-black greys for depth, and an amber accent. Every text and fill pair stays above 4.5:1
+    // contrast, which the tests check.
     public static readonly Palette Dark = new(
-        true,
-        Color.Black,
-        Color.FromArgb(12, 12, 12),
-        Color.FromArgb(24, 24, 24),
-        Color.FromArgb(36, 36, 36),
-        Color.White,
-        Color.FromArgb(140, 140, 140),
-        Color.White,
-        Color.FromArgb(214, 214, 214),
-        Color.Black,
-        Color.FromArgb(34, 34, 34),
-        Color.White,
-        Color.White,
-        Color.FromArgb(255, 95, 95),
-        Color.FromArgb(150, 150, 150),
-        Color.FromArgb(38, 38, 38));
+        IsDark: true,
+        Window: Color.Black,
+        Panel: Color.Black,
+        Raised: Color.FromArgb(22, 22, 22),
+        Border: Color.FromArgb(38, 38, 38),
+        Text: Color.FromArgb(220, 220, 220),
+        Muted: Color.FromArgb(160, 160, 160),
+        Accent: Color.FromArgb(232, 150, 62),
+        AccentHover: Color.FromArgb(245, 172, 92),
+        OnAccent: Color.FromArgb(18, 18, 18),
+        Selection: Color.FromArgb(44, 44, 44),
+        SelectionText: Color.FromArgb(245, 245, 245),
+        Good: Color.FromArgb(120, 200, 120),
+        Bad: Color.FromArgb(235, 95, 85),
+        Wave: Color.FromArgb(140, 140, 140),
+        LoopFill: Color.FromArgb(52, 38, 20),
+        Hover: Color.FromArgb(30, 30, 30),
+        Strong: Color.FromArgb(110, 110, 110));
 
-    public static Palette Current { get; private set; } = Light;
+    /// <summary>The app only has the dark theme.</summary>
+    public static Palette Current => Dark;
 
-    public static event Action? Changed;
+    // Nearly square corners on controls, and none at all on the panels that hold them.
+    private const int CornerRadius = 2;
+    public const int CardRadius = 0;
 
-    private const int CornerRadius = 7;
+    /// <summary>The short amber bar on the left of a selected row, so selection shows by shape as well as shade.</summary>
+    public static void SelectionBar(Graphics g, int x, int y, int height)
+    {
+        var smoothing = g.SmoothingMode;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        using var brush = new SolidBrush(Current.Accent);
+        g.FillRectangle(brush, x, y, 2, Math.Max(4, height));
+        g.SmoothingMode = smoothing;
+    }
+
+    /// <summary>A ring that shows which control has keyboard focus. Mouse users don't see it, keyboard users always do.</summary>
+    public static void DrawFocusRing(Graphics g, Rectangle area, int radius = CornerRadius)
+    {
+        var smoothing = g.SmoothingMode;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        using var path = Rounded(new Rectangle(area.X + 1, area.Y + 1, area.Width - 3, area.Height - 3), Math.Max(1, radius - 1));
+        using var pen = new Pen(Current.Text, 2f);
+        g.DrawPath(pen, path);
+        g.SmoothingMode = smoothing;
+    }
 
     public static GraphicsPath Rounded(Rectangle area, int radius = CornerRadius)
     {
-        int d = radius * 2;
         var path = new GraphicsPath();
+        if (radius <= 0)
+        {
+            path.AddRectangle(area);
+            return path;
+        }
+        int d = radius * 2;
         path.AddArc(area.X, area.Y, d, d, 180, 90);
         path.AddArc(area.Right - d, area.Y, d, d, 270, 90);
         path.AddArc(area.Right - d, area.Bottom - d, d, d, 0, 90);
@@ -89,7 +114,7 @@ public static class Theme
     public static void FillBox(Graphics g, Rectangle area, Color fill, Color? border = null, int radius = CornerRadius)
     {
         var smoothing = g.SmoothingMode;
-        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.SmoothingMode = radius > 0 ? SmoothingMode.AntiAlias : SmoothingMode.None;
         using var path = Rounded(new Rectangle(area.X, area.Y, area.Width - 1, area.Height - 1), radius);
         using (var brush = new SolidBrush(fill))
             g.FillPath(brush, path);
@@ -101,27 +126,18 @@ public static class Theme
         g.SmoothingMode = smoothing;
     }
 
-    private static readonly Lazy<string> TextFontName = new(() =>
+    /// <summary>The Windows 11 font where it exists, otherwise Segoe UI.</summary>
+    private static readonly Lazy<string> SystemFontName = new(() =>
     {
-        using var font = new Font("Segoe UI Variable Text", 9.5f);
+        using var font = new Font("Segoe UI Variable Text", 9f);
         return font.Name == "Segoe UI Variable Text" ? font.Name : "Segoe UI";
     });
 
-    /// <summary>The Windows 11 font where it exists, otherwise Segoe UI.</summary>
-    public static Font UiFont(float size = 9.5f) => new(TextFontName.Value, size);
-    public static Font TitleFont(float size = 13f) => new("Segoe UI Semibold", size);
+    /// <summary>Body text: the plain Windows font, small, as in a desktop music player.</summary>
+    public static Font UiFont(float size = 9f) => new(SystemFontName.Value, size);
 
-    public static void Set(bool dark)
-    {
-        Current = dark ? Dark : Light;
-        Changed?.Invoke();
-    }
-
-    public static bool SystemPrefersDark()
-    {
-        using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
-        return key?.GetValue("AppsUseLightTheme") is int light && light == 0;
-    }
+    /// <summary>Headings: the same font in semibold, so they stand out by weight rather than by a second typeface.</summary>
+    public static Font TitleFont(float size = 12f) => new("Segoe UI Semibold", size);
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr window, int attribute, ref int value, int size);
@@ -206,6 +222,11 @@ public static class Theme
                 field.Box.ForeColor = p.Text;
                 field.Invalidate();
                 return;
+            case SegmentedBar bar:
+                // Tabs sit straight on the header, so the bar takes the color around it.
+                bar.BackColor = bar.Parent?.BackColor ?? p.Window;
+                bar.Invalidate();
+                break;
             case CheckBox check:
                 check.ForeColor = p.Text;
                 check.Invalidate();
@@ -245,17 +266,17 @@ public static class Theme
         grid.BackgroundColor = p.Panel;
         grid.GridColor = p.Panel;
         var header = grid.ColumnHeadersDefaultCellStyle;
-        header.BackColor = p.Panel;
+        header.BackColor = p.Raised;
         header.ForeColor = p.Muted;
-        header.SelectionBackColor = p.Panel;
+        header.SelectionBackColor = p.Raised;
         header.SelectionForeColor = p.Muted;
-        header.Padding = new Padding(8, 0, 0, 0);
+        header.Padding = new Padding(6, 0, 0, 0);
         var cell = grid.DefaultCellStyle;
         cell.BackColor = p.Panel;
         cell.ForeColor = p.Text;
         cell.SelectionBackColor = p.Selection;
         cell.SelectionForeColor = p.SelectionText;
-        cell.Padding = new Padding(8, 0, 4, 0);
+        cell.Padding = new Padding(6, 0, 4, 0);
         foreach (Control child in grid.Controls)
             if (child is ScrollBar)
                 ThemeNative(child, "DarkMode_Explorer");
@@ -271,8 +292,8 @@ public sealed class FieldBox : Panel
     public FieldBox(string placeholder = "")
     {
         Box.PlaceholderText = placeholder;
-        Padding = new Padding(10, 8, 10, 5);
-        Height = 34;
+        Padding = new Padding(8, 6, 8, 4);
+        Height = 28;
         DoubleBuffered = true;
         Controls.Add(Box);
         Box.GotFocus += (_, _) => Invalidate();
@@ -283,7 +304,7 @@ public sealed class FieldBox : Panel
     {
         var p = Theme.Current;
         e.Graphics.Clear(Parent?.BackColor ?? p.Window);
-        Theme.FillBox(e.Graphics, ClientRectangle, p.Raised, Box.Focused ? p.Accent : p.Border);
+        Theme.FillBox(e.Graphics, ClientRectangle, p.Raised, Box.Focused ? Color.White : p.Border);
     }
 
     protected override void OnPaintBackground(PaintEventArgs e)
@@ -302,7 +323,7 @@ public sealed class FlatCombo : ComboBox
         DropDownStyle = ComboBoxStyle.DropDownList;
         FlatStyle = FlatStyle.Flat;
         DrawMode = DrawMode.OwnerDrawFixed;
-        ItemHeight = 22;
+        ItemHeight = 20;
     }
 
     protected override void OnDrawItem(DrawItemEventArgs e)
@@ -313,7 +334,7 @@ public sealed class FlatCombo : ComboBox
             e.Graphics.FillRectangle(back, e.Bounds);
         if (e.Index >= 0)
         {
-            var bounds = new Rectangle(e.Bounds.X + 6, e.Bounds.Y, e.Bounds.Width - 8, e.Bounds.Height);
+            var bounds = new Rectangle(e.Bounds.X + 10, e.Bounds.Y, e.Bounds.Width - 12, e.Bounds.Height);
             TextRenderer.DrawText(e.Graphics, GetItemText(Items[e.Index]), Font, bounds, selected ? p.SelectionText : p.Text,
                 TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
         }
@@ -330,8 +351,8 @@ public sealed class FlatCombo : ComboBox
         var bounds = new Rectangle(0, 0, Width, Height);
         using (var back = new SolidBrush(Parent?.BackColor ?? p.Window))
             g.FillRectangle(back, bounds);
-        Theme.FillBox(g, bounds, p.Raised, Focused ? p.Accent : p.Border);
-        var textBounds = new Rectangle(10, 0, Width - 34, Height);
+        Theme.FillBox(g, bounds, p.Raised, Focused ? Color.White : p.Border);
+        var textBounds = new Rectangle(8, 0, Width - 30, Height);
         TextRenderer.DrawText(g, Text, Font, textBounds, Enabled ? p.Text : p.Muted,
             TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
 
@@ -355,16 +376,14 @@ public sealed class FlatCombo : ComboBox
     }
 }
 
-/// <summary>A rounded surface that groups related controls, the main building block of the window.</summary>
+/// <summary>A flat surface with a thin outline that groups related controls, the main building block of the window.</summary>
 public sealed class CardPanel : Panel
 {
-    private const int CardRadius = 12;
-
     public CardPanel()
     {
         DoubleBuffered = true;
         Tag = Theme.PanelTag;
-        Padding = new Padding(8);
+        Padding = new Padding(4);
     }
 
     protected override void OnPaintBackground(PaintEventArgs e)
@@ -376,7 +395,7 @@ public sealed class CardPanel : Panel
     {
         var p = Theme.Current;
         e.Graphics.Clear(Parent?.BackColor ?? p.Window);
-        Theme.FillBox(e.Graphics, ClientRectangle, p.Panel, p.Border, CardRadius);
+        Theme.FillBox(e.Graphics, ClientRectangle, p.Panel, p.Border, Theme.CardRadius);
     }
 
     protected override void OnResize(EventArgs e)
@@ -386,13 +405,13 @@ public sealed class CardPanel : Panel
     }
 }
 
-/// <summary>A rounded button that paints itself, so hover, pressed and disabled all stay readable in both themes.</summary>
+/// <summary>A flat button that paints itself, so hover, pressed and disabled all stay readable.</summary>
 public class ModernButton : Button
 {
     private bool _hover;
     private bool _pressed;
 
-    /// <summary>Makes the ends fully round, for filter chips.</summary>
+    /// <summary>Marks a filter chip. Chips are drawn like other buttons; this is kept so callers can tell them apart.</summary>
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public bool IsPill { get; set; }
@@ -403,7 +422,20 @@ public class ModernButton : Button
         FlatAppearance.BorderSize = 0;
         UseVisualStyleBackColor = false;
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
-        Height = 34;
+        Height = 28;
+        Cursor = Cursors.Hand;
+    }
+
+    protected override void OnGotFocus(EventArgs e)
+    {
+        Invalidate();
+        base.OnGotFocus(e);
+    }
+
+    protected override void OnLostFocus(EventArgs e)
+    {
+        Invalidate();
+        base.OnLostFocus(e);
     }
 
     protected override void OnMouseEnter(EventArgs e)
@@ -444,7 +476,7 @@ public class ModernButton : Button
     public override Size GetPreferredSize(Size proposedSize)
     {
         var text = TextRenderer.MeasureText(Text, Font);
-        return new Size(text.Width + 30, Math.Max(Height, text.Height + 12));
+        return new Size(text.Width + 24, Math.Max(Height, text.Height + 10));
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -452,33 +484,72 @@ public class ModernButton : Button
         var p = Theme.Current;
         var g = e.Graphics;
         g.Clear(Parent?.BackColor ?? p.Window);
-        bool accent = Tag as string == Theme.AccentTag;
+        string style = Tag as string ?? "";
+        bool quiet = style is Theme.GhostTag or Theme.ActiveTag;
+        Color back = Parent?.BackColor ?? p.Window;
         Color fill;
         Color text;
         Color? border = null;
         if (!Enabled)
         {
-            fill = p.Raised;
+            fill = quiet ? back : p.Raised;
             text = p.Muted;
-            border = p.Border;
+            border = quiet ? null : p.Border;
         }
-        else if (accent)
+        else if (style == Theme.ActiveTag)
         {
-            fill = _hover && !_pressed ? p.AccentHover : p.Accent;
-            text = p.OnAccent;
-        }
-        else
-        {
-            fill = _hover ? p.Selection : p.Raised;
+            fill = _hover ? p.Hover : back;
             text = p.Text;
-            border = p.Border;
         }
-        if (IsPill)
-            Theme.FillBox(g, ClientRectangle, fill, border, Math.Max(1, Height / 2 - 1));
+        else if (style == Theme.GhostTag)
+        {
+            fill = _pressed ? p.Selection : _hover ? p.Hover : back;
+            text = _hover ? p.Text : p.Muted;
+        }
+        else if (style == Theme.AccentTag)
+        {
+            // The main action keeps the grey of the other buttons and is marked by a white outline.
+            fill = _pressed ? p.Selection : _hover ? p.Hover : p.Raised;
+            text = p.Text;
+            border = _hover ? p.Text : Color.White;
+        }
         else
-            Theme.FillBox(g, ClientRectangle, fill, border);
+        {
+            fill = _pressed ? p.Selection : _hover ? p.Hover : p.Raised;
+            text = p.Text;
+            border = _hover ? p.Strong : p.Border;
+        }
+        const int radius = 2;
+        Theme.FillBox(g, ClientRectangle, fill, border, radius);
         TextRenderer.DrawText(g, Text, Font, ClientRectangle, text,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+        if (style == Theme.ActiveTag)
+        {
+            using var line = new SolidBrush(Color.White);
+            g.FillRectangle(line, 6, Height - 2, Width - 12, 2);
+        }
+        if (Focused && ShowFocusCues)
+            Theme.DrawFocusRing(g, ClientRectangle, radius);
+    }
+}
+
+/// <summary>A row of a few choices side by side, like the page tabs.</summary>
+public sealed class SegmentedBar : FlowLayoutPanel
+{
+    public SegmentedBar()
+    {
+        AutoSize = true;
+        WrapContents = false;
+        Padding = new Padding(0);
+        DoubleBuffered = true;
+    }
+
+    protected override void OnPaintBackground(PaintEventArgs e) => e.Graphics.Clear(Parent?.BackColor ?? Theme.Current.Window);
+
+    protected override void OnResize(EventArgs eventargs)
+    {
+        base.OnResize(eventargs);
+        Invalidate();
     }
 }
 
@@ -496,8 +567,7 @@ public sealed class FlatCheck : CheckBox
         g.Clear(Parent?.BackColor ?? p.Window);
         int top = (Height - BoxSize) / 2;
         var box = new Rectangle(0, top, BoxSize, BoxSize);
-        using (var fill = new SolidBrush(Checked ? p.Accent : p.Raised))
-            g.FillRectangle(fill, box);
+        Theme.FillBox(g, box, Checked ? p.Accent : p.Raised, Checked ? null : p.Strong, 2);
         if (Checked)
         {
             g.SmoothingMode = SmoothingMode.AntiAlias;
@@ -505,19 +575,16 @@ public sealed class FlatCheck : CheckBox
             g.DrawLines(tick, new[] { new PointF(3.5f, top + 8.5f), new PointF(6.8f, top + 11.8f), new PointF(12.5f, top + 4.5f) });
             g.SmoothingMode = SmoothingMode.None;
         }
-        else
-        {
-            using var border = new Pen(p.Muted);
-            g.DrawRectangle(border, 0, top, BoxSize - 1, BoxSize - 1);
-        }
-        var text = new Rectangle(BoxSize + 6, 0, Width - BoxSize - 6, Height);
+        var text = new Rectangle(BoxSize + 8, 0, Width - BoxSize - 8, Height);
         TextRenderer.DrawText(g, Text, Font, text, Enabled ? p.Text : p.Muted, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.NoPrefix);
+        if (Focused && ShowFocusCues)
+            Theme.DrawFocusRing(g, new Rectangle(-2, top - 2, BoxSize + 4, BoxSize + 4), 2);
     }
 
     public override Size GetPreferredSize(Size proposedSize)
     {
         var text = TextRenderer.MeasureText(Text, Font);
-        return new Size(BoxSize + 6 + text.Width + 2, Math.Max(BoxSize, text.Height) + 4);
+        return new Size(BoxSize + 8 + text.Width + 2, Math.Max(BoxSize, text.Height) + 6);
     }
 }
 
@@ -618,7 +685,7 @@ public sealed class LoopThumb : Control
     }
 }
 
-/// <summary>Sidebar list drawn with roomy rows and a count on the right.</summary>
+/// <summary>Sidebar list drawn with compact rows and a count on the right.</summary>
 public sealed class SideList : ListBox
 {
     /// <summary>Marks a row as a section title, which can't be selected.</summary>
@@ -630,7 +697,7 @@ public sealed class SideList : ListBox
         public override string ToString() => Name;
     }
 
-    private readonly Font _headerFont = Theme.UiFont(8f);
+    private readonly Font _headerFont = Theme.TitleFont(8f);
 
     protected override void Dispose(bool disposing)
     {
@@ -643,7 +710,7 @@ public sealed class SideList : ListBox
     {
         DrawMode = DrawMode.OwnerDrawFixed;
         BorderStyle = BorderStyle.None;
-        ItemHeight = 34;
+        ItemHeight = 24;
         IntegralHeight = false;
     }
 
@@ -658,19 +725,23 @@ public sealed class SideList : ListBox
             g.FillRectangle(back, e.Bounds);
         if (item.IsHeader)
         {
-            TextRenderer.DrawText(g, item.Name.ToUpperInvariant(), _headerFont, new Rectangle(e.Bounds.X + 18, e.Bounds.Y + 12, e.Bounds.Width - 20, e.Bounds.Height - 12), p.Muted,
+            TextRenderer.DrawText(g, item.Name, _headerFont, new Rectangle(e.Bounds.X + 10, e.Bounds.Y + 6, e.Bounds.Width - 12, e.Bounds.Height - 6), p.Muted,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
             return;
         }
         if (selected)
-            Theme.FillBox(g, new Rectangle(e.Bounds.X + 6, e.Bounds.Y + 2, e.Bounds.Width - 12, e.Bounds.Height - 4), p.Selection);
+        {
+            using (var fill = new SolidBrush(p.Selection))
+                g.FillRectangle(fill, e.Bounds);
+            Theme.SelectionBar(g, e.Bounds.X, e.Bounds.Y, e.Bounds.Height);
+        }
         int reserved = item.Count < 0 ? 20 : 58;
-        var nameBounds = new Rectangle(e.Bounds.X + 18, e.Bounds.Y, e.Bounds.Width - reserved, e.Bounds.Height);
+        var nameBounds = new Rectangle(e.Bounds.X + 10, e.Bounds.Y, e.Bounds.Width - reserved, e.Bounds.Height);
         TextRenderer.DrawText(g, item.Name, Font, nameBounds, selected ? p.SelectionText : p.Text,
             TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
         if (item.Count < 0)
             return;
-        var countBounds = new Rectangle(e.Bounds.Right - 56, e.Bounds.Y, 40, e.Bounds.Height);
+        var countBounds = new Rectangle(e.Bounds.Right - 50, e.Bounds.Y, 40, e.Bounds.Height);
         TextRenderer.DrawText(g, item.Count.ToString(), Font, countBounds, p.Muted,
             TextFormatFlags.VerticalCenter | TextFormatFlags.Right);
     }

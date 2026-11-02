@@ -53,7 +53,7 @@ public sealed class SongsPanel : Panel
     }
 
     private static ModernButton Action(string text, string tag = "") =>
-        new() { Text = text, Height = 34, Width = 330, Margin = new Padding(0, 0, 0, 8), Tag = tag };
+        new() { Text = text, Height = 28, Width = 330, Margin = new Padding(0, 0, 0, 8), Tag = tag };
 
     private void BuildLayout()
     {
@@ -71,7 +71,7 @@ public sealed class SongsPanel : Panel
         foreach (string kind in new[] { AllKinds, nameof(SongKind.Downloaded), nameof(SongKind.Imported), nameof(SongKind.Edited) })
         {
             string value = kind;
-            var chip = new ModernButton { Text = value, IsPill = true, Height = 28, AutoSize = true, Margin = new Padding(0, 0, 6, 6), Tag = value == _kind ? Theme.AccentTag : "" };
+            var chip = new ModernButton { Text = value, IsPill = true, Height = 28, AutoSize = true, Margin = new Padding(0, 0, 6, 6), Tag = value == _kind ? Theme.ActiveTag : "" };
             chip.Click += (_, _) => PickKind(value);
             _kindChips[value] = chip;
             _chips.Controls.Add(chip);
@@ -135,7 +135,7 @@ public sealed class SongsPanel : Panel
         _kind = kind;
         foreach (var (name, chip) in _kindChips)
         {
-            chip.Tag = name == kind ? Theme.AccentTag : "";
+            chip.Tag = name == kind ? Theme.ActiveTag : "";
             chip.Invalidate();
         }
         RefreshList();
@@ -392,7 +392,10 @@ public sealed class SongRows : ListBox
         using (var back = new SolidBrush(p.Panel))
             g.FillRectangle(back, e.Bounds);
         if (selected)
+        {
             Theme.FillBox(g, new Rectangle(e.Bounds.X + 2, e.Bounds.Y + 2, e.Bounds.Width - 4, e.Bounds.Height - 4), p.Selection);
+            Theme.SelectionBar(g, e.Bounds.X + 2, e.Bounds.Y + 14, e.Bounds.Height - 28);
+        }
         var name = new Rectangle(e.Bounds.X + 14, e.Bounds.Y + 7, e.Bounds.Width - 28, Font.Height + 2);
         TextRenderer.DrawText(g, row.Name, Font, name, selected ? p.SelectionText : p.Text, TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
         var details = new Rectangle(e.Bounds.X + 14, e.Bounds.Y + 28, e.Bounds.Width - 28, _smallFont.Height + 2);
