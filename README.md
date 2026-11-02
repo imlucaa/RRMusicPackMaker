@@ -39,8 +39,8 @@ A short setup window on first launch shows the folders it found and the recommen
 
 Get it from [Releases](https://github.com/imlucaa/RRMusicPackMaker/releases). There's no installer, so run it from any folder you can write to.
 
-- `MusicPackMaker.exe` is 1.7 MB, and needs the .NET 9 Desktop Runtime.
-- `MusicPackMaker-NoDotNet.exe` is 49 MB, and needs nothing else installed.
+- `MusicPackMaker.exe` is 1.9 MB, and needs the .NET 9 Desktop Runtime.
+- `MusicPackMaker-NoDotNet.exe` is 50 MB, and needs nothing else installed.
 
 ## Build
 
