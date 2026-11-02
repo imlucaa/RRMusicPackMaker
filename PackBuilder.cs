@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -23,6 +22,9 @@ public sealed class Options
 
     /// <summary>Writes _f files for stock slots, used when the final lap speed-up setting is off.</summary>
     public bool StockFinalLapFiles { get; set; } = true;
+
+    /// <summary>Evens out songs a little louder on race tracks, because the game's race mix turns music down.</summary>
+    public bool RaceBoost { get; set; } = true;
 }
 
 public sealed class ProjectRow
@@ -38,6 +40,10 @@ public sealed class ProjectRow
     public string LoopEnd { get; set; } = "";
     public double Crossfade { get; set; }
     public int VolumeDb { get; set; }
+    public double Speed { get; set; } = 1;
+    public bool KeepPitch { get; set; }
+    public bool Reverb { get; set; }
+    public bool KeepFile { get; set; }
 }
 
 public sealed class Project
@@ -68,6 +74,10 @@ public sealed class Project
             LoopEnd = r.LoopEnd,
             Crossfade = r.Crossfade,
             VolumeDb = r.VolumeDb,
+            Speed = r.Speed,
+            KeepPitch = r.KeepPitch,
+            Reverb = r.Reverb,
+            KeepFile = r.KeepFile,
         }).ToList(),
     };
 
@@ -92,12 +102,16 @@ public sealed class Project
             row.LoopEnd = saved.LoopEnd;
             row.Crossfade = saved.Crossfade;
             row.VolumeDb = saved.VolumeDb;
+            row.Speed = saved.Speed > 0 ? saved.Speed : 1;
+            row.KeepPitch = saved.KeepPitch;
+            row.Reverb = saved.Reverb;
+            row.KeepFile = saved.KeepFile;
         }
         return unmatched;
     }
 }
 
-public sealed record BuildResult(string Folder, string MusicFolder, string ZipPath, int Built, int Failed, long Bytes, int Unchanged, int Encoded);
+public sealed record BuildResult(string Folder, string MusicFolder, int Built, int Failed, long Bytes, int Unchanged, int Encoded);
 
 public static class PackBuilder
 {
@@ -113,6 +127,30 @@ public static class PackBuilder
         [("Off: exact jump", 0), ("0.25 seconds", 0.25), ("0.5 seconds", 0.5), ("1 second", 1), ("2 seconds", 2)];
 
     public static readonly int[] VolumeChoices = [-9, -6, -3, 0, 3, 6, 9];
+
+    private static readonly double[] FasterSpeeds = [1.1, 1.2, 1.25, 1.3, 1.5];
+
+    private static readonly double[] SlowerSpeeds = [0.9, 0.85, 0.8, 0.75, 0.7];
+
+    private static string SpeedName(double speed) => speed.ToString(CultureInfo.InvariantCulture);
+
+    public static readonly (string Text, double Speed, bool KeepPitch, bool Reverb)[] SpeedChoices =
+    [
+        ("Normal", 1, false, false),
+        ("Normal + reverb", 1, false, true),
+        .. SlowerSpeeds.Select(speed => ($"Slowed {SpeedName(speed)}x + reverb", speed, false, true)),
+        .. SlowerSpeeds.Select(speed => ($"Slowed {SpeedName(speed)}x", speed, false, false)),
+        .. FasterSpeeds.Select(speed => ($"Faster {SpeedName(speed)}x, same pitch", speed, true, false)),
+        .. FasterSpeeds.Select(speed => ($"Nightcore {SpeedName(speed)}x, higher pitch", speed, false, false)),
+    ];
+
+    public static int SpeedIndex(double speed, bool keepPitch, bool reverb = false)
+    {
+        // Keeping the pitch only exists when speeding up, so anything else saved with it is the same choice.
+        bool keeps = keepPitch && speed > 1;
+        int index = Array.FindIndex(SpeedChoices, choice => choice.Speed == speed && choice.KeepPitch == keeps && choice.Reverb == reverb);
+        return Math.Max(0, index);
+    }
 
     public static int CrossfadeIndex(double seconds)
     {
@@ -134,7 +172,7 @@ public static class PackBuilder
         return clean.Length == 0 ? "Music Pack" : clean.ToString().TrimEnd('.', ' ');
     }
 
-    public static BuildResult Build(Options options, IReadOnlyList<TrackRow> rows, string outputFolder, Action<string> log, Action<int, int>? progress = null, bool writeZip = true)
+    public static BuildResult Build(Options options, IReadOnlyList<TrackRow> rows, string outputFolder, Action<string> log, Action<int, int>? progress = null)
     {
         var work = rows.Where(r => r.IsAssigned).ToList();
         if (work.Count == 0)
@@ -236,18 +274,8 @@ public static class PackBuilder
         WriteCredits(Path.Combine(packFolder, "credits.csv"), work);
         WriteReadme(Path.Combine(packFolder, "README.txt"), options, work);
 
-        // A zip with no music in it would only look like a finished pack.
-        string zip = Path.Combine(outputFolder, name + ".zip");
-        var music = Directory.GetFiles(musicFolder, "*.brstm");
-        if (writeZip)
-        {
-            File.Delete(zip);
-            if (music.Length > 0)
-                ZipFile.CreateFromDirectory(packFolder, zip, CompressionLevel.Fastest, false);
-        }
-
-        long bytes = music.Sum(f => new FileInfo(f).Length);
-        return new BuildResult(packFolder, musicFolder, zip, work.Count - failed, failed, bytes, unchanged, encoded);
+        long bytes = Directory.GetFiles(musicFolder, "*.brstm").Sum(f => new FileInfo(f).Length);
+        return new BuildResult(packFolder, musicFolder, work.Count - failed, failed, bytes, unchanged, encoded);
     }
 
     private static Dictionary<string, string> LoadManifest(string path)
@@ -304,26 +332,87 @@ public static class PackBuilder
             row.StockFinalBase != null,
             row.PulsarFinalBase != null,
             row.AliasBases.Length);
+
+        // Only a changed speed adds to the key, so songs at normal speed aren't encoded again after an update.
+        if (UsesFileAsIs(row))
+            text += "\nas is";
+        if (row.Speed != 1 || row.Reverb)
+            text += $"\n{row.Speed.ToString(CultureInfo.InvariantCulture)}\n{row.KeepPitch}\n{row.Reverb}";
         return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(text)));
     }
 
     /// <summary>The song's own volume setting, plus the race boost when the pack evens out its songs.</summary>
     internal static double EffectiveVolumeDb(Options options, TrackRow row)
     {
-        if (options.Loudness != Options.LoudnessEven || !row.IsRaceMusic)
+        if (!options.RaceBoost || options.Loudness != Options.LoudnessEven || !row.IsRaceMusic)
             return row.VolumeDb;
         return Math.Min(row.VolumeDb + RaceBoostDb, Math.Max(row.VolumeDb, MaximumTotalBoostDb));
     }
 
+    /// <summary>
+    /// Writes a temporary WAV of a track's song with its speed, reverb and volume, so it can be heard before
+    /// making the pack. It plays straight through, because finding the loop would only add a wait.
+    /// </summary>
+    internal static string RenderPreview(Options options, TrackRow row)
+    {
+        int rate = row.FixedRate ?? options.SampleRate;
+
+        // A file that's kept as it is should sound here just as it will in the pack.
+        bool asIs = UsesFileAsIs(row);
+        var song = Processing.Prepare(row.Source, rate, LoopMode.NoLoop, "", "", asIs ? Options.LoudnessOff : options.Loudness, null, asIs ? 0 : EffectiveVolumeDb(options, row), 0, row.Speed, row.KeepPitch, row.Reverb);
+        return AudioIO.WriteRangePreview(song.Channels, rate, 0, song.Length / (double)rate + 1);
+    }
+
+    /// <summary>
+    /// True when an imported .brstm can go in the pack untouched. Encoding it again would lose quality and
+    /// squash it to the pack's sample rate, so that only happens once a setting asks for a change.
+    /// </summary>
+    internal static bool UsesFileAsIs(TrackRow row)
+    {
+        static bool IsBrstm(string path) => Path.GetExtension(path).Equals(".brstm", StringComparison.OrdinalIgnoreCase);
+        return row.KeepFile && IsBrstm(row.Source) && (row.FinalSource.Length == 0 || IsBrstm(row.FinalSource))
+            && row.Speed == 1 && !row.Reverb && row.VolumeDb == 0 && row.Crossfade == 0 && row.Loop == LoopMode.Auto;
+    }
+
+    /// <summary>Copies the file straight in. Returns false if it can't be used as it is, so it gets encoded instead.</summary>
+    private static bool TryCopyAsIs(Options options, TrackRow row, string musicFolder, Action<string> log)
+    {
+        // Stock tracks need a final lap file. Without one of its own, it has to be made from the song.
+        if (!UsesFileAsIs(row) || (row.StockFinalBase != null && options.StockFinalLapFiles && row.FinalSource.Length == 0))
+            return false;
+        int channels = options.MultiChannelSlots ? row.StockChannels : 2;
+        try
+        {
+            var summary = AudioIO.ReadBrstmSummary(row.Source);
+            if (summary.Channels != channels)
+                return false;
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or NotSupportedException or ArgumentException)
+        {
+            return false;
+        }
+
+        foreach (string file in new[] { row.FileBase }.Concat(row.AliasBases))
+            File.Copy(row.Source, Path.Combine(musicFolder, file + ".brstm"), true);
+        string? finalBase = row.StockFinalBase ?? row.PulsarFinalBase;
+        if (finalBase != null && row.FinalSource.Length > 0)
+            File.Copy(row.FinalSource, Path.Combine(musicFolder, finalBase + ".brstm"), true);
+        log($"{row.FileBase}.brstm, kept as it was in the pack.");
+        return true;
+    }
+
     private static void BuildRow(Options options, TrackRow row, string musicFolder, Action<string> log)
     {
+        if (File.Exists(row.Source) && TryCopyAsIs(options, row, musicFolder, log))
+            return;
+
         double volume = EffectiveVolumeDb(options, row);
         if (!File.Exists(row.Source))
             throw new FileNotFoundException($"Song file not found: {row.Source}");
 
         int rate = row.FixedRate ?? options.SampleRate;
         var mode = row.Loop == LoopMode.Auto && row.DefaultNoLoop ? LoopMode.NoLoop : row.Loop;
-        var song = Processing.Prepare(row.Source, rate, mode, row.LoopStart, row.LoopEnd, options.Loudness, log, volume, row.Crossfade);
+        var song = Processing.Prepare(row.Source, rate, mode, row.LoopStart, row.LoopEnd, options.Loudness, log, volume, row.Crossfade, row.Speed, row.KeepPitch, row.Reverb);
 
         // The file stops at the loop end, so anything after it is not stored.
         double seconds = (song.Loop ? song.LoopEnd : song.Length) / (double)rate;
@@ -339,7 +428,7 @@ public static class PackBuilder
         {
             if (row.FinalSource.Length > 0)
             {
-                var final = Processing.Prepare(row.FinalSource, rate, LoopMode.Auto, "", "", options.Loudness, log, volume, row.Crossfade);
+                var final = Processing.Prepare(row.FinalSource, rate, LoopMode.Auto, "", "", options.Loudness, log, volume, row.Crossfade, row.Speed, row.KeepPitch, row.Reverb);
                 AudioIO.WriteBrstm(final, Path.Combine(musicFolder, row.StockFinalBase + ".brstm"), channels, rate);
             }
             else if (options.StockFinalLapFiles)
@@ -352,14 +441,15 @@ public static class PackBuilder
         // Retro Rewind speeds up the normal file by itself, so a final lap file is only for a different song.
         if (row.PulsarFinalBase != null && row.FinalSource.Length > 0)
         {
-            var final = Processing.Prepare(row.FinalSource, rate, LoopMode.Auto, "", "", options.Loudness, log, volume, row.Crossfade);
+            var final = Processing.Prepare(row.FinalSource, rate, LoopMode.Auto, "", "", options.Loudness, log, volume, row.Crossfade, row.Speed, row.KeepPitch, row.Reverb);
             AudioIO.WriteBrstm(final, Path.Combine(musicFolder, row.PulsarFinalBase + ".brstm"), 2, rate);
         }
 
         string loopText = song.Loop
             ? $"loop {AudioIO.FormatTime((double)song.LoopStart / rate)} to {AudioIO.FormatTime((double)song.LoopEnd / rate)}"
             : "no loop";
-        log($"{row.FileBase}.brstm, {rate} Hz, {channels} channels, {AudioIO.FormatTime(seconds)}, {loopText}.");
+        string speedText = row.Speed == 1 && !row.Reverb ? "" : $", {SpeedChoices[SpeedIndex(row.Speed, row.KeepPitch, row.Reverb)].Text}";
+        log($"{row.FileBase}.brstm, {rate} Hz, {channels} channels, {AudioIO.FormatTime(seconds)}, {loopText}{speedText}.");
     }
 
     private static void WarnAboutFinal(TrackRow row, Action<string> log)
@@ -380,6 +470,7 @@ public static class PackBuilder
             string file = order[^1];
             order.RemoveAt(order.Count - 1);
             row.Source = file;
+            row.KeepFile = false;
             row.Song = Path.GetFileNameWithoutExtension(file);
             row.Status = "";
         }
@@ -402,10 +493,11 @@ public static class PackBuilder
             text.AppendLine($"By {options.Author}");
         text.AppendLine();
         text.AppendLine("INSTALL");
-        text.AppendLine("Real Wii: copy the RetroRewind6 folder from this zip to the root of your SD card and merge it with the one there.");
-        text.AppendLine("The songs must end up in SD:/RetroRewind6/Patches.");
+        text.AppendLine("Real Wii: copy the RetroRewind6 folder from here to the root of your SD card and merge it with the one there.");
+        text.AppendLine("The songs must end up in SD:/RetroRewind6/Patches. No ISO or My Stuff is needed.");
+        text.AppendLine("If they don't play, turn on Loose Archive Overrides in Retro Rewind's settings.");
         text.AppendLine();
-        text.AppendLine("Wheel Wizard or Wheel Wizard+: import this zip as a mod, then turn the mod on.");
+        text.AppendLine("Wheel Wizard or Wheel Wizard+: zip this folder, import the zip as a mod, then turn the mod on.");
         text.AppendLine();
         text.AppendLine("Dolphin with Riivolution: copy the RetroRewind6 folder into your Riivolution folder and merge it with the one there.");
         text.AppendLine();
@@ -443,6 +535,47 @@ public static class PackBuilder
         foreach (string file in files)
             File.Copy(file, Path.Combine(target, Path.GetFileName(file)), true);
         return files.Length;
+    }
+
+    /// <summary>Zips the built pack with the same layout as an exported folder. A half-written zip never replaces a good one.</summary>
+    public static void ExportZip(string packFolder, string zipPath)
+    {
+        string temp = zipPath + ".tmp";
+        File.Delete(temp);
+        System.IO.Compression.ZipFile.CreateFromDirectory(packFolder, temp, System.IO.Compression.CompressionLevel.Fastest, false);
+        File.Move(temp, zipPath, true);
+    }
+
+    /// <summary>The folder an export to this destination creates.</summary>
+    public static string ExportTarget(string packFolder, string destination) =>
+        Path.Combine(destination, Path.GetFileName(packFolder.TrimEnd('\\', '/')));
+
+    /// <summary>
+    /// Copies the built pack into a folder of the user's choosing, as a folder named after the pack.
+    /// Songs left from an older export of this pack are replaced. Anything else there stays.
+    /// </summary>
+    public static string ExportFolder(string packFolder, string destination)
+    {
+        string source = Path.GetFullPath(packFolder).TrimEnd(Path.DirectorySeparatorChar);
+        string target = Path.GetFullPath(ExportTarget(packFolder, destination)).TrimEnd(Path.DirectorySeparatorChar);
+        if (target.Equals(source, StringComparison.OrdinalIgnoreCase))
+            return target;
+        string sourcePrefix = source + Path.DirectorySeparatorChar;
+        if (target.StartsWith(sourcePrefix, StringComparison.OrdinalIgnoreCase))
+            throw new IOException("Pick a folder outside the pack itself.");
+
+        string music = Path.Combine(target, "RetroRewind6", "Patches");
+        if (Directory.Exists(music))
+            foreach (string old in Directory.GetFiles(music, "*.brstm"))
+                File.Delete(old);
+
+        foreach (string file in Directory.GetFiles(source, "*", SearchOption.AllDirectories))
+        {
+            string destinationFile = Path.Combine(target, Path.GetRelativePath(source, file));
+            Directory.CreateDirectory(Path.GetDirectoryName(destinationFile)!);
+            File.Copy(file, destinationFile, true);
+        }
+        return target;
     }
 
     /// <summary>
@@ -518,10 +651,15 @@ public static class PackBuilder
     /// </summary>
     public static List<string> ModsFolders()
     {
+        var settings = AppStorage.LoadSettings();
+        if (!settings.UseWheelWizard)
+            return [];
         if (Environment.GetEnvironmentVariable("RRMUSIC_MODS") is { Length: > 0 } custom)
             return [custom];
 
         var folders = new List<string>();
+        if (settings.ModsFolder is { Length: > 0 } chosen)
+            folders.Add(chosen);
         using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\WheelWizard");
         if (key?.GetValue("AppDataLocation") is string moved && Directory.Exists(moved))
             folders.Add(Path.Combine(moved, "Mods"));
@@ -529,6 +667,20 @@ public static class PackBuilder
         if (Directory.Exists(standard))
             folders.Add(Path.Combine(standard, "Mods"));
         return folders.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    /// <summary>Retro Rewind folders on SD cards and USB drives. Pass roots to look somewhere else.</summary>
+    public static List<string> FindSdCards(IEnumerable<string>? roots = null)
+    {
+        if (roots == null)
+        {
+            // RRMUSIC_DATA means an automated run, which must not touch a real card.
+            if (Environment.GetEnvironmentVariable("RRMUSIC_DATA") != null)
+                return [];
+            roots = DriveInfo.GetDrives().Where(drive => drive.DriveType == DriveType.Removable && drive.IsReady).Select(drive => drive.RootDirectory.FullName);
+        }
+        return roots.Select(root => Path.Combine(root, "RetroRewind6"))
+            .Where(folder => File.Exists(Path.Combine(folder, "Binaries", "ConfigRT.pul"))).ToList();
     }
 
     /// <summary>Files in the Patches folder that no mod owns. Wheel Wizard deletes these once any mod is enabled.</summary>
@@ -671,6 +823,7 @@ public static class PackBuilder
             else if (found.Count == 1)
             {
                 found[0].Source = file;
+                found[0].KeepFile = false;
                 if (found[0].Song.Length == 0)
                     found[0].Song = Path.GetFileNameWithoutExtension(file);
                 matched++;

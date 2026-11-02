@@ -71,6 +71,9 @@ public static class Tools
 
 public static class AudioIO
 {
+    // Several echoes close together blur into a room sound. The gains can't add up past full scale, so loud songs don't clip.
+    private const string ReverbFilter = "aecho=0.5:0.7:43|67|103|151|211|293:0.24|0.2|0.16|0.12|0.08|0.05";
+
     public static SourceInfo Probe(string path)
     {
         byte[] json = Tools.RunBinary("ffprobe", "-v", "error", "-of", "json", "-show_streams", "-show_format", "-select_streams", "a:0", path);
@@ -164,12 +167,17 @@ public static class AudioIO
 
     private static int BigInt(byte[] d, int o) => (d[o] << 24) | (d[o + 1] << 16) | (d[o + 2] << 8) | d[o + 3];
 
-    /// <summary>Decodes any format FFmpeg reads to 16-bit stereo at the given rate.</summary>
-    public static short[][] Decode(string path, int rate)
+    /// <summary>Decodes any format FFmpeg reads to 16-bit stereo at the given rate, optionally faster at the same pitch.</summary>
+    public static short[][] Decode(string path, int rate, double tempo = 1, bool reverb = false)
     {
+        string filter = "aresample=filter_size=64:phase_shift=14:cutoff=0.97";
+        if (reverb)
+            filter = $"{ReverbFilter},{filter}";
+        if (tempo != 1)
+            filter = $"atempo={tempo.ToString(CultureInfo.InvariantCulture)},{filter}";
         byte[] raw = Tools.RunBinary("ffmpeg", "-v", "error", "-nostdin", "-i", path, "-vn", "-map", "0:a:0",
             "-f", "s16le", "-acodec", "pcm_s16le", "-ac", "2", "-ar", rate.ToString(CultureInfo.InvariantCulture),
-            "-af", "aresample=filter_size=64:phase_shift=14:cutoff=0.97", "pipe:1");
+            "-af", filter, "pipe:1");
         int samples = raw.Length / 4;
         if (samples == 0)
             throw new InvalidDataException("The file decoded to no audio.");
@@ -259,7 +267,7 @@ public static class AudioIO
 
     private static string WriteWav(short[][] channels, int rate, params (int Start, int Length)[] parts)
     {
-        string path = Path.Combine(Path.GetTempPath(), $"rrmusic_preview_{Environment.ProcessId}_{Guid.NewGuid():N}.wav");
+        string path = Path.Combine(Path.GetTempPath(), $"rrp_{Guid.NewGuid():N}.wav");
         using var writer = new BinaryWriter(File.Create(path));
         int bytes = parts.Sum(part => part.Length) * 4;
         writer.Write(Encoding.ASCII.GetBytes("RIFF"));
@@ -295,12 +303,29 @@ public static class Processing
     private const double LimiterAttackSeconds = 0.005;
     private const double LimiterReleaseSeconds = 0.12;
 
+    // Changing the speed without the pitch rebuilds the waveform, so the two sides of a loop jump no
+    // longer line up exactly. This short blend stops that from clicking.
+    private const double StretchedJumpBlendSeconds = 0.03;
+
+    // Reverb rings on at the end of a loop but hasn't built up at its start, so that jump needs a longer blend.
+    private const double ReverbJumpBlendSeconds = 0.25;
+
     /// <summary>Turns a row's source and settings into audio ready to encode.</summary>
-    public static Song Prepare(string source, int rate, LoopMode mode, string loopStart, string loopEnd, string loudness, Action<string>? log = null, double volumeDb = 0, double crossfadeSeconds = 0)
+    public static Song Prepare(string source, int rate, LoopMode mode, string loopStart, string loopEnd, string loudness, Action<string>? log = null, double volumeDb = 0, double crossfadeSeconds = 0, double speed = 1, bool keepPitch = false, bool reverb = false)
     {
+        if (speed <= 0)
+            speed = 1;
         var info = AudioIO.Probe(source);
-        var song = new Song { Channels = AudioIO.Decode(source, rate), Rate = rate };
-        double scale = info.SampleRate > 0 ? (double)rate / info.SampleRate : 1;
+
+        // Nightcore and slowed: read the song at another rate and play it at the normal one, so the pitch
+        // moves with the speed and every sample keeps its place, which keeps loop points exact.
+        bool stretch = keepPitch && speed != 1;
+        int readRate = stretch ? rate : (int)Math.Round(rate / speed);
+        double actualSpeed = stretch ? speed : (double)rate / readRate;
+        var song = new Song { Channels = AudioIO.Decode(source, readRate, stretch ? speed : 1, reverb), Rate = rate };
+
+        // Loop points are always given on the original song, so they move with the speed.
+        double scale = (info.SampleRate > 0 ? (double)rate / info.SampleRate : 1) / actualSpeed;
         int ToTarget(long position) => (int)Math.Round(position * scale);
         int len = song.Length;
 
@@ -317,11 +342,14 @@ public static class Processing
                 SetLoop(song, start is null ? 0 : ToTarget(start.Value), end is null ? len : ToTarget(end.Value));
                 break;
             case LoopMode.FindLoop:
-                var found = LoopFinder.Find(song.Channels, rate);
+                // Repeats only match exactly in the untouched audio, so search that when an effect changes the waveform.
+                var found = LoopFinder.Find(stretch || reverb ? AudioIO.Decode(source, stretch ? rate : readRate) : song.Channels, rate);
                 if (found is { } f)
                 {
-                    SetLoop(song, f.Start, f.End);
-                    log?.Invoke($"Found loop {AudioIO.FormatTime((double)f.Start / rate)} to {AudioIO.FormatTime((double)f.End / rate)}, match {f.Score * 100:0}%.");
+                    int foundStart = (int)Math.Round(f.Start / (stretch ? speed : 1));
+                    int foundEnd = (int)Math.Round(f.End / (stretch ? speed : 1));
+                    SetLoop(song, foundStart, foundEnd);
+                    log?.Invoke($"Found loop {AudioIO.FormatTime((double)foundStart / rate)} to {AudioIO.FormatTime((double)foundEnd / rate)}, match {f.Score * 100:0}%.");
                 }
                 else
                 {
@@ -343,7 +371,8 @@ public static class Processing
         }
 
         TrimSilence(song);
-        ApplyCrossfade(song, crossfadeSeconds);
+        double leastBlend = reverb ? ReverbJumpBlendSeconds : stretch ? StretchedJumpBlendSeconds : 0;
+        ApplyCrossfade(song, Math.Max(crossfadeSeconds, leastBlend));
         ApplyLevel(song, loudness, volumeDb);
         return song;
     }

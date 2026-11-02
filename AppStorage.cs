@@ -18,6 +18,15 @@ public sealed class AppSettings
 
     /// <summary>Set once the first-run setup has been seen.</summary>
     public bool SetupDone { get; set; }
+
+    /// <summary>Where the last pack was exported, so the next export starts there.</summary>
+    public string ExportFolder { get; set; } = "";
+
+    /// <summary>A Wheel Wizard Mods folder chosen by hand, for when it isn't found automatically.</summary>
+    public string ModsFolder { get; set; } = "";
+
+    /// <summary>Off for people who don't use Wheel Wizard, so packs only go in the Patches folder.</summary>
+    public bool UseWheelWizard { get; set; } = true;
 }
 
 /// <summary>Where the app keeps its settings and the autosaved project.</summary>

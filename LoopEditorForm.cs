@@ -1,5 +1,3 @@
-using System.Media;
-
 namespace RRMusicPackMaker;
 
 /// <summary>Set a song's loop by eye and ear: waveform, draggable markers, loop search and instant replay of the jump.</summary>
@@ -19,13 +17,12 @@ public sealed class LoopEditorForm : Form
     private readonly ModernButton _snap = Make("Snap end to best match");
     private readonly ModernButton _playJump = Make("▶  Play the jump", Theme.AccentTag);
     private readonly ModernButton _playCursor = Make("▶  Play from cursor");
+    private readonly ModernButton _pause = Make("❚❚  Pause");
     private readonly ModernButton _stop = Make("■  Stop");
 
     private short[][] _channels = [];
     private short[] _mono = [];
     private bool _updating;
-    private SoundPlayer? _player;
-    private string? _previewFile;
     private List<LoopFinder.Result> _found = [];
 
     public LoopEditorForm(TrackRow row)
@@ -54,7 +51,9 @@ public sealed class LoopEditorForm : Form
 
         var help = new Label
         {
-            Text = "Drag the Start and End markers. Scroll to zoom, drag the waveform to move around.",
+            Text = _row.Speed == 1 && !_row.Reverb
+                ? "Drag the Start and End markers. Scroll to zoom, drag the waveform to move around."
+                : "Drag the markers. Scroll to zoom. This plays the original, and Speed is added when the pack is made.",
             AutoSize = true,
             Tag = Theme.MutedTag,
             Dock = DockStyle.Top,
@@ -93,7 +92,7 @@ public sealed class LoopEditorForm : Form
         AddMarkerRow(fields, 1, "End", _endBox, delta => MoveMarkers(_wave.LoopStart, _wave.LoopEnd + delta));
 
         var actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, Padding = new Padding(14, 2, 14, 8), WrapContents = false };
-        actions.Controls.AddRange([_playJump, _playCursor, _stop, _snap]);
+        actions.Controls.AddRange([_playJump, _playCursor, _pause, _stop, _snap]);
 
         var footer = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(14, 8, 14, 10), Tag = Theme.PanelTag };
         var ok = Make("Use this loop", Theme.AccentTag);
@@ -124,7 +123,9 @@ public sealed class LoopEditorForm : Form
         _snap.Click += async (_, _) => await SnapAsync();
         _playJump.Click += (_, _) => PlayJump();
         _playCursor.Click += (_, _) => PlayFromCursor();
-        _stop.Click += (_, _) => _player?.Stop();
+        _pause.Click += (_, _) => AudioPreview.TogglePause();
+        _stop.Click += (_, _) => AudioPreview.StopFor(this);
+        AudioPreview.Changed += ShowPlayback;
         _candidates.SelectedIndexChanged += (_, _) =>
         {
             if (_candidates.SelectedIndex >= 0 && _candidates.SelectedIndex < _found.Count)
@@ -154,10 +155,19 @@ public sealed class LoopEditorForm : Form
 
     private void SetEnabled(bool enabled)
     {
-        foreach (var button in new[] { _find, _snap, _playJump, _playCursor, _stop })
+        foreach (var button in new[] { _find, _snap, _playJump, _playCursor })
         {
             button.Enabled = enabled;
         }
+        ShowPlayback();
+    }
+
+    private void ShowPlayback()
+    {
+        bool active = AudioPreview.IsActive(this);
+        _pause.Enabled = active;
+        _stop.Enabled = active;
+        _pause.Text = AudioPreview.State == PreviewState.Paused ? "▶  Resume" : "❚❚  Pause";
     }
 
     internal async Task LoadAudioAsync()
@@ -280,30 +290,28 @@ public sealed class LoopEditorForm : Form
             LoopEnd = _wave.LoopEnd,
         };
         Processing.ApplyCrossfade(song, SelectedCrossfade);
-        Play(AudioIO.WriteSeamPreview(song));
-        _status.Text = "Playing 4 seconds before the jump and 4 seconds after it.";
+        if (Play(AudioIO.WriteSeamPreview(song)))
+            _status.Text = "Playing 4 seconds before the jump and 4 seconds after it.";
     }
 
     private void PlayFromCursor()
     {
-        Play(AudioIO.WriteRangePreview(_channels, Rate, _wave.CursorPosition, 30));
-        _status.Text = "Playing 30 seconds from the cursor. Click the waveform to move the cursor.";
+        if (Play(AudioIO.WriteRangePreview(_channels, Rate, _wave.CursorPosition, 30)))
+            _status.Text = "Playing 30 seconds from the cursor. Click the waveform to move the cursor.";
     }
 
-    private void Play(string file)
+    private bool Play(string file)
     {
-        _player?.Stop();
-        _previewFile = file;
-        _player = new SoundPlayer(file);
-        _player.Play();
+        if (AudioPreview.Play(file, this))
+            return true;
+        _status.Text = "Could not play the sound. Check your audio device.";
+        return false;
     }
 
     private void CleanUpPreview()
     {
-        _player?.Stop();
-        _player?.Dispose();
-        if (_previewFile != null)
-            File.Delete(_previewFile);
+        AudioPreview.Changed -= ShowPlayback;
+        AudioPreview.StopFor(this);
     }
 
     private double SelectedCrossfade => PackBuilder.CrossfadeChoices[Math.Max(0, _crossfade.SelectedIndex)].Seconds;

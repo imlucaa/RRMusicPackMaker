@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Globalization;
 using System.Text;
 using System.Text.Json;
 
@@ -15,7 +14,6 @@ public static class SetupCheck
     private const int MusicIndex = 20;
     private const int LooseOverridesIndex = 58;
     private const int SectionHeaderSize = 12;
-    private const int QuietDolphinVolume = 80;
 
     /// <summary>Everything worth warning about for this install. Empty when all is well or nothing can be read.</summary>
     public static List<string> Run(string retroRewindFolder)
@@ -28,10 +26,10 @@ public static class SetupCheck
         string versionFile = Path.Combine(retroRewindFolder, "version.txt");
         if (File.Exists(versionFile))
             version = ReadTextOrNull(versionFile);
-        return Evaluate(settings, version, ReadDolphinVolume(Path.Combine(dolphin, "Config", "Dolphin.ini")));
+        return Evaluate(settings, version);
     }
 
-    internal static List<string> Evaluate(byte[]? settings, string? version, int? dolphinVolume)
+    internal static List<string> Evaluate(byte[]? settings, string? version)
     {
         var issues = new List<string>();
         if (settings != null && version?.Trim().StartsWith(KnownVersion, StringComparison.Ordinal) == true)
@@ -50,8 +48,6 @@ public static class SetupCheck
                     issues.Add("Retro Rewind's Loose Archive Overrides setting is off, so the Patches folder won't load.");
             }
         }
-        if (dolphinVolume < QuietDolphinVolume)
-            issues.Add($"Dolphin's volume is {dolphinVolume}. Set it to 100 under Config > Audio.");
         return issues;
     }
 
@@ -73,23 +69,6 @@ public static class SetupCheck
             if (File.Exists(Path.Combine(folder, "Config", "Dolphin.ini")))
                 return folder;
             folder = Path.GetDirectoryName(folder);
-        }
-        return null;
-    }
-
-    internal static int? ReadDolphinVolume(string ini)
-    {
-        string? text = ReadTextOrNull(ini);
-        if (text == null)
-            return null;
-        bool inSection = false;
-        foreach (string raw in text.Split('\n'))
-        {
-            string line = raw.Trim();
-            if (line.StartsWith('['))
-                inSection = line.Equals("[DSP]", StringComparison.OrdinalIgnoreCase);
-            else if (inSection && line.StartsWith("Volume", StringComparison.OrdinalIgnoreCase) && line.Contains('='))
-                return int.TryParse(line[(line.IndexOf('=') + 1)..].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int volume) ? volume : null;
         }
         return null;
     }

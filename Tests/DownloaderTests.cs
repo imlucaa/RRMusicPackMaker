@@ -28,7 +28,7 @@ public class DownloaderTests
         var args = Downloader.SearchArguments("--exec calc");
         int separator = args.IndexOf("--");
         Assert.Equal(args.Count - 2, separator);
-        Assert.Equal("ytsearch8:--exec calc", args[^1]);
+        Assert.Equal("ytsearch15:--exec calc", args[^1]);
     }
 
     [Fact]
@@ -125,6 +125,48 @@ public class DownloaderTests
 
 public class MusicSearchTests
 {
+    [Fact]
+    public void Merge_KeepsEverything_WithOfficialFirst_AndEachVideoOnce()
+    {
+        var official = new SearchResult("https://music.youtube.com/watch?v=aaa", "Coconut Mall", "Nintendo", "3:21", Plays: 500);
+        var unrelated = new SearchResult("https://music.youtube.com/watch?v=bbb", "Something Else", "Someone", "2:00");
+        var video = new SearchResult("https://music.youtube.com/watch?v=ccc", "Coconut Mall video", "Someone", "3:00");
+        var again = new SearchResult("https://www.youtube.com/watch?v=aaa", "Coconut Mall upload", "Uploader", "3:21");
+        var upload = new SearchResult("https://www.youtube.com/watch?v=ddd", "coconut mall 1 hour", "Fan", "1:00:00");
+
+        var merged = Downloader.MergeResults("coconut mall", [unrelated, official], [video], [again, upload]);
+
+        Assert.Equal(["aaa", "bbb", "ccc", "ddd"], merged.Select(result => result.VideoId));
+        Assert.True(merged[0].Official);
+        Assert.All(merged.Skip(1), result => Assert.False(result.Official));
+    }
+
+    [Fact]
+    public void Merge_NothingOfficial_StillShowsTheRest()
+    {
+        var upload = new SearchResult("https://www.youtube.com/watch?v=ddd", "unreleased leak", "Fan", "2:00");
+        var merged = Downloader.MergeResults("zzz", [], [], [upload]);
+        Assert.False(Assert.Single(merged).Official);
+    }
+
+    [Fact]
+    public void Display_MarksOfficialSongs()
+    {
+        var song = new SearchResult("https://x/watch?v=a", "Title", "Artist", "1:00");
+        Assert.DoesNotContain("Official", song.Display);
+        Assert.StartsWith("Official", (song with { Official = true }).Display);
+    }
+
+    [Fact]
+    public void PreviewArguments_OnlyAskForTheAddress_AndTheLinkCantBeAnOption()
+    {
+        var args = Downloader.PreviewArguments("--exec calc");
+        Assert.Contains("--get-url", args);
+        Assert.Equal("--", args[^2]);
+        Assert.Equal("--exec calc", args[^1]);
+        Assert.DoesNotContain("-x", args);
+    }
+
     // The same shape YouTube Music returned in a real search, cut down.
     private const string Reply = """
     {"contents":{"sections":[{"shelf":{"contents":[

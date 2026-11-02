@@ -17,7 +17,7 @@ public class SetupCheckTests
     }
 
     [Fact]
-    public void Evaluate_AllGood_NoWarnings() => Assert.Empty(SetupCheck.Evaluate(Settings(), "6.13.4", 100));
+    public void Evaluate_AllGood_NoWarnings() => Assert.Empty(SetupCheck.Evaluate(Settings(), "6.13.4"));
 
     [Theory]
     [InlineData(1, 0, 0, "Music setting is off")]
@@ -25,44 +25,21 @@ public class SetupCheckTests
     [InlineData(0, 1, 0, "custom track music")]
     [InlineData(0, 0, 1, "Loose Archive Overrides")]
     public void Evaluate_GameSettingOff_Warns(byte music, byte custom, byte loose, string expected) =>
-        Assert.Contains(expected, Assert.Single(SetupCheck.Evaluate(Settings(music, custom, loose), "6.13.4", 100)));
+        Assert.Contains(expected, Assert.Single(SetupCheck.Evaluate(Settings(music, custom, loose), "6.13.4")));
 
     [Fact]
     public void Evaluate_OtherRetroRewindVersion_SkipsPositionsThatMayHaveMoved() =>
-        Assert.Empty(SetupCheck.Evaluate(Settings(music: 1), "6.14.0", 100));
+        Assert.Empty(SetupCheck.Evaluate(Settings(music: 1), "6.14.0"));
 
     [Fact]
     public void Evaluate_NoVersionFile_SkipsGameSettings() =>
-        Assert.Empty(SetupCheck.Evaluate(Settings(music: 1), null, 100));
-
-    [Theory]
-    [InlineData(60, true)]
-    [InlineData(79, true)]
-    [InlineData(80, false)]
-    [InlineData(100, false)]
-    public void Evaluate_DolphinVolume(int volume, bool warns) =>
-        Assert.Equal(warns, SetupCheck.Evaluate(null, null, volume).Count == 1);
+        Assert.Empty(SetupCheck.Evaluate(Settings(music: 1), null));
 
     [Fact]
-    public void Evaluate_NothingReadable_NoWarnings() => Assert.Empty(SetupCheck.Evaluate(null, null, null));
+    public void Evaluate_NothingReadable_NoWarnings() => Assert.Empty(SetupCheck.Evaluate(null, null));
 
     [Fact]
-    public void Evaluate_TruncatedSettings_NoCrash() => Assert.Empty(SetupCheck.Evaluate(new byte[8], "6.13.4", null));
-
-    [Fact]
-    public void ReadDolphinVolume_OnlyReadsTheDspSection()
-    {
-        string path = Path.GetTempFileName();
-        try
-        {
-            File.WriteAllText(path, "[Other]\r\nVolume = 5\r\n[DSP]\r\nDSPThread = True\r\nVolume = 60\r\n[Core]\r\nVolume = 7\r\n");
-            Assert.Equal(60, SetupCheck.ReadDolphinVolume(path));
-        }
-        finally
-        {
-            File.Delete(path);
-        }
-    }
+    public void Evaluate_TruncatedSettings_NoCrash() => Assert.Empty(SetupCheck.Evaluate(new byte[8], "6.13.4"));
 }
 
 public class UpdateCheckTests
