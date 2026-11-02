@@ -13,6 +13,9 @@ public sealed class TrackRow
     public string Platform { get; init; } = "";
     public string Name { get; init; } = "";
 
+    /// <summary>The track this one is a version of, when its name was "SNES X > SW2 X". Still findable by search.</summary>
+    public string VariantOf { get; init; } = "";
+
     /// <summary>File name without extension, e.g. n_Circuit32_n or 104_N.</summary>
     public string FileBase { get; init; } = "";
 
@@ -48,6 +51,18 @@ public sealed class TrackRow
     /// <summary>Seconds of blend at the loop jump. Zero keeps the jump exact.</summary>
     public double Crossfade { get; set; }
     public int VolumeDb { get; set; }
+
+    /// <summary>How much faster the song plays. 1 is normal speed.</summary>
+    public double Speed { get; set; } = 1;
+
+    /// <summary>Keeps the song's pitch when it's faster. Otherwise the pitch rises with the speed, like nightcore.</summary>
+    public bool KeepPitch { get; set; }
+
+    /// <summary>Adds reverb, the usual partner of a slowed song.</summary>
+    public bool Reverb { get; set; }
+
+    /// <summary>The song is a finished .brstm from an imported pack, so it's used as it is unless its settings change.</summary>
+    public bool KeepFile { get; set; }
 
     public bool IsAssigned => !string.IsNullOrWhiteSpace(Source);
 
@@ -93,7 +108,7 @@ public static class Catalog
         "GCN DK Mountain", "N64 Bowser's Castle",
     }.Select(NameKey));
 
-    private static string NameKey(string name) => new string(name.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
+    internal static string NameKey(string name) => new string(name.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
 
     /// <summary>The track's own name, without any variant part.</summary>
     internal static string MainName(string name)
@@ -104,7 +119,23 @@ public static class Catalog
         return variant < 0 ? name : name[..variant];
     }
 
-    internal static bool IsReg(string name) => RegNames.Contains(NameKey(MainName(name)));
+    /// <summary>The "SW2 X" of "SNES X > SW2 X", when it names a console. Other names after the arrow aren't a separate version.</summary>
+    internal static string? VersionName(string name)
+    {
+        int arrow = name.IndexOf(" > ", StringComparison.Ordinal);
+        if (arrow < 0)
+            return null;
+        string version = name[(arrow + 3)..];
+        return PlatformOf(version).Length > 0 ? version : null;
+    }
+
+    /// <summary>One of the 32 original tracks. A remake from another game, like SW2's, is a retro even though it replaces one.</summary>
+    internal static bool IsReg(string name)
+    {
+        if (VersionName(name) is { } version && PlatformOf(version) != PlatformOf(MainName(name)))
+            return false;
+        return RegNames.Contains(NameKey(MainName(name)));
+    }
 
     internal static string PlatformOf(string name)
     {
@@ -281,18 +312,23 @@ public static class Catalog
                     list.Add(track.Name);
                 }
                 string final = FindExisting(strmFiles, track.FileStem + "_Final", track.FileStem + "_F") ?? track.FileStem + "_Final";
+                string? version = VersionName(track.Name);
+                string shownName = version ?? track.Name;
+                string variantOf = version != null ? MainName(track.Name) : "";
+                string variantNote = variantOf.Length > 0 ? $"Version of {variantOf}. " : "";
                 var row = new TrackRow
                 {
                     Category = category == CatRetro && IsReg(track.Name) ? CatRegs : category,
-                    Platform = PlatformOf(MainName(track.Name)),
-                    Name = track.Name,
+                    Platform = PlatformOf(MainName(shownName)),
+                    Name = shownName,
+                    VariantOf = variantOf,
                     FileBase = stemN,
                     PulsarFinalBase = final,
-                    Note = hasOwn ? "Has its own music in Retro Rewind."
+                    Note = variantNote + (hasOwn ? "Has its own music in Retro Rewind."
                         : track.Variant > 0 ? "Variant. Uses the main track's music unless you set a song here."
                         : stockBySlot.TryGetValue(track.MusicSlot, out var stock)
                             ? $"No own music in Retro Rewind. Now plays stock slot: {stock.Name}."
-                            : "No own music in Retro Rewind.",
+                            : "No own music in Retro Rewind."),
                 };
                 if (strmFiles.ContainsKey(final))
                     row.ExistingFinalFiles.Add(strmFiles[final]);
@@ -373,7 +409,7 @@ public static class Catalog
                 if (File.Exists(Path.Combine(candidate, "Binaries", "ConfigRT.pul")))
                     return candidate;
         }
-        return null;
+        return PackBuilder.FindSdCards().FirstOrDefault();
     }
 }
 

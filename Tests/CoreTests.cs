@@ -59,7 +59,9 @@ public class SortingTests
 
     [Theory]
     [InlineData("Wii Luigi Circuit", true)]
-    [InlineData("Wii Toad's Factory > SW2 Toad's Factory", true)]
+    [InlineData("Wii Toad's Factory > SW2 Toad's Factory", false)]
+    [InlineData("SNES Ghost Valley 2 > SW2 Ghost Valley 2", false)]
+    [InlineData("SNES Mario Circuit 3 > SNES Mario Circuit 3 DX", true)]
     [InlineData("N64 DK's Jungle Parkway", true)]
     [InlineData("N64 DK Jungle Parkway", true)]
     [InlineData("DS Peach Garden", true)]
@@ -81,6 +83,16 @@ public class SortingTests
     [InlineData("DSi Fake Track", "")]
     public void PlatformOf_ReadsTheConsole(string name, string expected) =>
         Assert.Equal(expected, Catalog.PlatformOf(name));
+
+    [Theory]
+    [InlineData("SNES Ghost Valley 2 > SW2 Ghost Valley 2", "SW2 Ghost Valley 2")]
+    [InlineData("SNES Donut Plains 1 > Beta Donut Plains 1", "Beta Donut Plains 1")]
+    [InlineData("GBA Cheese Land > Wii U Cheese Land", "Wii U Cheese Land")]
+    [InlineData("SNES Choco Island 1 > SNES Choco Island 1 DX", "SNES Choco Island 1 DX")]
+    [InlineData("Phendrana > Night", null)]
+    [InlineData("SNES Mario Circuit 3", null)]
+    public void VersionName_IsTheVersionAfterTheArrow(string name, string? expected) =>
+        Assert.Equal(expected, Catalog.VersionName(name));
 
     [Fact]
     public void Organize_GroupsInSidebarOrder()
@@ -617,6 +629,9 @@ public class BuildTests : IDisposable
         var row = Row("1_N");
         row.VolumeDb = -3;
         row.Crossfade = 0.5;
+        row.Speed = 1.25;
+        row.KeepPitch = true;
+        row.Reverb = true;
         row.Loop = LoopMode.Custom;
         row.LoopStart = "0:01.000000";
         string path = Path.Combine(_folder, "p.json");
@@ -626,6 +641,9 @@ public class BuildTests : IDisposable
         Project.Load(path).ApplyTo(fresh);
         Assert.Equal(-3, fresh[0].VolumeDb);
         Assert.Equal(0.5, fresh[0].Crossfade);
+        Assert.Equal(1.25, fresh[0].Speed);
+        Assert.True(fresh[0].KeepPitch);
+        Assert.True(fresh[0].Reverb);
         Assert.Equal(LoopMode.Custom, fresh[0].Loop);
         Assert.Equal("0:01.000000", fresh[0].LoopStart);
     }
@@ -639,6 +657,150 @@ public class BuildTests : IDisposable
         Project.Load(path).ApplyTo(fresh);
         Assert.Equal(LoopMode.WholeSong, fresh[0].Loop);
         Assert.Equal(0, fresh[0].VolumeDb);
+        Assert.Equal(1, fresh[0].Speed);
+        Assert.False(fresh[0].KeepPitch);
+    }
+
+    [Fact]
+    public void Build_EachSpeedIsItsOwnFile_AtTheRightLength()
+    {
+        var normal = Row("1_N");
+        var nightcore = Row("2_N");
+        nightcore.Speed = 1.25;
+        var faster = Row("3_N");
+        faster.Speed = 1.25;
+        faster.KeepPitch = true;
+
+        var result = Run(normal, nightcore, faster);
+
+        Assert.Equal(3, result.Encoded);
+        Assert.InRange(AudioIO.ReadBrstmSummary(Music("1_N")).Samples, 94000, 97000);
+        Assert.InRange(AudioIO.ReadBrstmSummary(Music("2_N")).Samples, 75000, 78000);
+
+        // The same pitch gets a short blend at the jump, and the encoder then pads the file to line up
+        // its loop start, so what shows the speed here is the length of the loop.
+        var faster3 = AudioIO.ReadBrstmSummary(Music("3_N"));
+        Assert.InRange(faster3.End - faster3.Start, 74000, 78000);
+        Assert.Contains(_log, line => line.Contains("Nightcore 1.25x"));
+    }
+
+    private string MadeBrstm()
+    {
+        var made = Run(Row("source_N"));
+        return Path.Combine(made.MusicFolder, "source_N.brstm");
+    }
+
+    private TrackRow Imported(string file, string source)
+    {
+        string copy = Path.Combine(_folder, "imported_" + file + ".brstm");
+        File.Copy(source, copy, true);
+        var row = Row(file);
+        row.Source = copy;
+        row.KeepFile = true;
+        return row;
+    }
+
+    [Fact]
+    public void Build_ImportedSong_GoesInUnchanged()
+    {
+        var row = Imported("1_N", MadeBrstm());
+        byte[] original = File.ReadAllBytes(row.Source);
+        Assert.Equal(0, Run(row).Failed);
+        Assert.Equal(original, File.ReadAllBytes(Music("1_N")));
+        Assert.Contains(_log, line => line.Contains("kept as it was"));
+    }
+
+    [Theory]
+    [InlineData("speed")]
+    [InlineData("reverb")]
+    [InlineData("volume")]
+    [InlineData("loop")]
+    public void Build_ImportedSong_ChangingASetting_EncodesItAgain(string setting)
+    {
+        var row = Imported("1_N", MadeBrstm());
+        byte[] original = File.ReadAllBytes(row.Source);
+        switch (setting)
+        {
+            case "speed": row.Speed = 0.8; break;
+            case "reverb": row.Reverb = true; break;
+            case "volume": row.VolumeDb = -3; break;
+            default: row.Loop = LoopMode.WholeSong; break;
+        }
+        Assert.False(PackBuilder.UsesFileAsIs(row));
+        Assert.Equal(0, Run(row).Failed);
+        Assert.NotEqual(original, File.ReadAllBytes(Music("1_N")));
+    }
+
+    [Fact]
+    public void Build_ImportedStockSong_KeepsItsOwnFinalLapFile()
+    {
+        var row = Imported("n_Farm_n", MadeBrstm());
+        byte[] original = File.ReadAllBytes(row.Source);
+        var stock = new TrackRow { Name = "Farm", FileBase = "n_Farm_n", StockFinalBase = "n_Farm_f", Source = row.Source, FinalSource = row.Source, KeepFile = true };
+        Run(stock);
+        Assert.Equal(original, File.ReadAllBytes(Music("n_Farm_n")));
+        Assert.Equal(original, File.ReadAllBytes(Music("n_Farm_f")));
+    }
+
+    [Fact]
+    public void Build_ImportedStockSong_WithoutAFinalLapFile_StillGetsOne()
+    {
+        var row = Imported("n_Farm_n", MadeBrstm());
+        var stock = new TrackRow { Name = "Farm", FileBase = "n_Farm_n", StockFinalBase = "n_Farm_f", Source = row.Source, KeepFile = true };
+        Assert.Equal(0, Run(stock).Failed);
+        Assert.True(File.Exists(Music("n_Farm_f")));
+    }
+
+    [Fact]
+    public void Project_RemembersThatASongIsKeptAsIs()
+    {
+        var row = Row("1_N");
+        row.KeepFile = true;
+        string path = Path.Combine(_folder, "keep.json");
+        Project.From(new Options(), [row]).Save(path);
+        var fresh = new List<TrackRow> { new() { FileBase = "1_N" } };
+        Project.Load(path).ApplyTo(fresh);
+        Assert.True(fresh[0].KeepFile);
+    }
+
+    [Fact]
+    public void Build_TurningOnReverb_EncodesAgain()
+    {
+        var row = Row("1_N");
+        Run(row);
+        row.Reverb = true;
+        Assert.Equal(0, Run(row).Unchanged);
+        Assert.Contains(_log, line => line.Contains("Normal + reverb"));
+    }
+
+    [Fact]
+    public void RaceBoost_CanBeTurnedOff()
+    {
+        var row = new TrackRow { Category = Catalog.CatRetro, VolumeDb = 3 };
+        Assert.True(PackBuilder.EffectiveVolumeDb(new Options(), row) > 3);
+        Assert.Equal(3, PackBuilder.EffectiveVolumeDb(new Options { RaceBoost = false }, row));
+    }
+
+    [Fact]
+    public void Build_ChangingTheSpeed_EncodesAgain()
+    {
+        var row = Row("1_N");
+        Run(row);
+        Assert.Equal(1, Run(row).Unchanged);
+        row.Speed = 1.5;
+        var changed = Run(row);
+        Assert.Equal(0, changed.Unchanged);
+        Assert.InRange(AudioIO.ReadBrstmSummary(Music("1_N")).Samples, 62000, 66000);
+    }
+
+    [Fact]
+    public void Build_FinalLapSong_GetsTheSameSpeed()
+    {
+        var row = Row("1_N");
+        row.FinalSource = _wav;
+        row.Speed = 1.5;
+        Run(row);
+        Assert.InRange(AudioIO.ReadBrstmSummary(Music("1_Nx")).Samples, 62000, 66000);
     }
 
     [Fact]
@@ -671,9 +833,67 @@ public class BuildTests : IDisposable
     {
         var result = Run(Row("1_N"));
         Assert.EndsWith(Path.Combine("RetroRewind6", "Patches"), result.MusicFolder);
-        using var zip = System.IO.Compression.ZipFile.OpenRead(result.ZipPath);
-        Assert.Contains(zip.Entries, e => e.FullName.Replace('\\', '/') == "RetroRewind6/Patches/1_N.brstm");
-        Assert.DoesNotContain(zip.Entries, e => e.FullName.Contains("MyStuff"));
+        Assert.True(File.Exists(Path.Combine(result.MusicFolder, "1_N.brstm")));
+        Assert.False(Directory.Exists(Path.Combine(result.Folder, "RetroRewind6", "MyStuff")));
+    }
+
+    [Fact]
+    public void Build_NeverWritesAZip()
+    {
+        Run(Row("1_N"));
+        Assert.Empty(Directory.GetFiles(_folder, "*.zip", SearchOption.AllDirectories));
+    }
+
+    [Fact]
+    public void ExportFolder_CopiesTheWholePack_IntoAFolderNamedAfterIt()
+    {
+        var result = Run(Row("1_N"));
+        string target = PackBuilder.ExportFolder(result.Folder, Path.Combine(_folder, "usb"));
+        Assert.Equal(Path.Combine(_folder, "usb", "T"), target);
+        Assert.True(File.Exists(Path.Combine(target, "RetroRewind6", "Patches", "1_N.brstm")));
+        Assert.True(File.Exists(Path.Combine(target, "README.txt")));
+        Assert.True(File.Exists(Path.Combine(target, "credits.csv")));
+    }
+
+    [Fact]
+    public void ExportFolder_AgainAfterRemovingASong_RemovesThatSong_KeepsOtherFiles()
+    {
+        var keep = Row("1_N");
+        var first = Run(keep, Row("2_N"));
+        string destination = Path.Combine(_folder, "usb");
+        string target = PackBuilder.ExportFolder(first.Folder, destination);
+        File.WriteAllText(Path.Combine(target, "my notes.txt"), "mine");
+
+        var second = Run(keep);
+        PackBuilder.ExportFolder(second.Folder, destination);
+
+        Assert.False(File.Exists(Path.Combine(target, "RetroRewind6", "Patches", "2_N.brstm")));
+        Assert.True(File.Exists(Path.Combine(target, "RetroRewind6", "Patches", "1_N.brstm")));
+        Assert.Equal("mine", File.ReadAllText(Path.Combine(target, "my notes.txt")));
+    }
+
+    [Fact]
+    public void ExportFolder_ToWhereThePackAlreadyIs_LeavesItAlone()
+    {
+        var result = Run(Row("1_N"));
+        string target = PackBuilder.ExportFolder(result.Folder, _folder);
+        Assert.Equal(Path.GetFullPath(result.Folder), target);
+        Assert.True(File.Exists(Path.Combine(result.MusicFolder, "1_N.brstm")));
+    }
+
+    [Fact]
+    public void ExportFolder_InsideThePack_IsRefused()
+    {
+        var result = Run(Row("1_N"));
+        Assert.Throws<IOException>(() => PackBuilder.ExportFolder(result.Folder, Path.Combine(result.Folder, "RetroRewind6")));
+    }
+
+    [Fact]
+    public void ExportFolder_MissingSubfolders_AreCreated()
+    {
+        var result = Run(Row("1_N"));
+        string target = PackBuilder.ExportFolder(result.Folder, Path.Combine(_folder, "a", "b", "c"));
+        Assert.True(Directory.Exists(target));
     }
 
     [Fact]
@@ -804,26 +1024,6 @@ public class BuildTests : IDisposable
         {
             Environment.SetEnvironmentVariable("RRMUSIC_MODS", null);
         }
-    }
-
-    [Fact]
-    public void Build_WithoutZip_LeavesAnEarlierExportAlone()
-    {
-        var row = Row("1_N");
-        var first = Run(row);
-        var written = File.GetLastWriteTimeUtc(first.ZipPath);
-        PackBuilder.Build(new Options { PackName = "T" }, [row], _folder, _ => { }, writeZip: false);
-        Assert.Equal(written, File.GetLastWriteTimeUtc(first.ZipPath));
-    }
-
-    [Fact]
-    public void Build_EveryTrackFails_LeavesNoZip()
-    {
-        var bad = Row("1_N");
-        bad.Source = Path.Combine(_folder, "gone.mp3");
-        var result = Run(bad);
-        Assert.Equal(0, result.Built);
-        Assert.False(File.Exists(result.ZipPath));
     }
 
     [Fact]

@@ -219,6 +219,98 @@ internal static class Program
                 form.Close();
                 return 0;
             }
+            case "recycle-test":
+                // Checks the Recycle Bin call works in a published build, which the tests can't do without filling the real bin.
+                Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile(args[1], Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs, Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
+                return File.Exists(args[1]) ? 1 : 0;
+            case "screenshot-songs":
+            {
+                ApplicationConfiguration.Initialize();
+                using var form = new MainForm();
+                if (Option(args, "--theme") is { } theme && (theme == "dark") != Theme.Current.IsDark)
+                    form.ToggleTheme();
+                form.StartPosition = FormStartPosition.Manual;
+                form.Location = new Point(-5000, -5000);
+                form.Show();
+                form.SongsForTest.ImportSongs(args.Skip(2).TakeWhile(arg => !arg.StartsWith("--")).ToArray());
+                form.ShowSongs();
+                Pump(1200);
+                Capture(form, args[1]);
+                form.Close();
+                return 0;
+            }
+            case "preview":
+            {
+                // Fetches a real preview without playing it, to check it still works against YouTube.
+                string file = Downloader.PreviewAsync(args[1], Console.WriteLine, CancellationToken.None).GetAwaiter().GetResult();
+                File.Move(file, args[2], true);
+                return 0;
+            }
+            case "import-check":
+            {
+                // Shows what an import would match, without changing anything.
+                var rows = Catalog.Build(Catalog.DetectRetroRewind(), out _);
+                var plan = PackImporter.Plan(args[1], rows);
+                Console.WriteLine($"tracks={plan.Tracks} finals={plan.Matches.Count(match => match.IsFinal)} unmatched={plan.Unmatched.Count} credits={plan.Credits.Count}");
+                foreach (var pack in PackImporter.FindInstalled(Catalog.DetectRetroRewind() ?? "", PackBuilder.ModsFolders()))
+                    Console.WriteLine(pack.ToString());
+                return 0;
+            }
+            case "import-build":
+            {
+                // Imports a real pack and builds it, without touching the game.
+                var rows = Catalog.Build(Catalog.DetectRetroRewind(), out _);
+                var plan = PackImporter.Plan(args[1], rows);
+                string output = Option(args, "--out")!;
+                var copies = PackImporter.CopyFiles(plan, Path.Combine(output, "copies"));
+                PackImporter.Assign(plan, copies, true);
+                Console.WriteLine($"tracks={plan.Tracks} finals={plan.Matches.Count(match => match.IsFinal)} unmatched={string.Join("|", plan.Unmatched)} notes={plan.TrackNotes.Count}");
+                foreach (var row in rows.Where(row => row.IsAssigned))
+                    Console.WriteLine($"{row.Category} | {row.Name} | {row.Song} | final={row.FinalSource.Length > 0}");
+                var result = PackBuilder.Build(new Options { PackName = "Check" }, rows, output, Console.WriteLine);
+                Console.WriteLine($"Built {result.Built}, failed {result.Failed}, encoded {result.Encoded}");
+                return result.Failed == 0 ? 0 : 1;
+            }
+            case "screenshot-import":
+            {
+                ApplicationConfiguration.Initialize();
+                Theme.Set(Option(args, "--theme") != "light");
+                using var import = new ImportPackForm(PackImporter.FindInstalled(Catalog.DetectRetroRewind() ?? "", PackBuilder.ModsFolders(), AppStorage.DefaultOutputFolder), _ => true);
+                import.StartPosition = FormStartPosition.Manual;
+                import.Location = new Point(-5000, -5000);
+                import.Show();
+                Pump(300);
+                Capture(import, args[1]);
+                import.Close();
+                return 0;
+            }
+            case "screenshot-edits":
+            {
+                ApplicationConfiguration.Initialize();
+                using var form = new MainForm();
+                if (Option(args, "--theme") is { } theme && (theme == "dark") != Theme.Current.IsDark)
+                    form.ToggleTheme();
+                form.StartPosition = FormStartPosition.Manual;
+                form.Location = new Point(-5000, -5000);
+                form.Show();
+                var opening = form.ShowTab(editor: true);
+                PumpUntil(() => opening.IsCompleted);
+                foreach (string file in args.Skip(2).TakeWhile(arg => !arg.StartsWith("--")))
+                {
+                    var adding = form.EditorForTest.AddSongAsync(file);
+                    PumpUntil(() => adding.IsCompleted);
+                }
+                var clips = form.EditorForTest.ClipsForTest;
+                if (clips.Count > 0)
+                {
+                    form.EditorForTest.SetPositionForTest(clips[0].Length / 2);
+                    form.EditorForTest.Split();
+                }
+                Pump(400);
+                Capture(form, args[1]);
+                form.Close();
+                return 0;
+            }
             case "screenshot-download":
             {
                 ApplicationConfiguration.Initialize();
@@ -259,6 +351,19 @@ internal static class Program
                     Console.WriteLine($"After: {setup.FfmpegStatusForTest} | button {setup.InstallVisibleForTest} | {setup.StartTextForTest}");
                 }
                 setup.Close();
+                return 0;
+            }
+            case "screenshot-export":
+            {
+                ApplicationConfiguration.Initialize();
+                Theme.Set(Option(args, "--theme") != "light");
+                using var export = new ExportForm(wheelWizardFound: true);
+                export.StartPosition = FormStartPosition.Manual;
+                export.Location = new Point(-5000, -5000);
+                export.Show();
+                Pump(300);
+                Capture(export, args[1]);
+                export.Close();
                 return 0;
             }
             case "screenshot-settings":
