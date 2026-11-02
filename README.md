@@ -20,7 +20,7 @@ A Windows app for making custom music packs for [Retro Rewind](https://mkwiiki.o
 - Sets loop, crossfade, volume and speed on many tracks at once, plays a track's current music, and removes a pack with one click
 - Hear a track's song with its speed, reverb and volume before making the pack, then pause, resume or stop it
 - Keyboard shortcuts: Ctrl+F to search, Delete to remove a song, Space to play and pause, Esc to stop
-- Dark and light themes, autosave, and rebuilds that only re-encode what changed
+- A clean black look like a desktop music player, autosave, and rebuilds that only re-encode what changed
 - Adds the pack to the Patches folder and to Wheel Wizard and Wheel Wizard+, or exports it as a folder or zip anywhere you choose
 - Even volume across songs, louder on race tracks because the game's race mix turns music down, with clean per-song boost or cut
 - The exported folder has install steps and credits inside, for real Wii, Dolphin or sharing
@@ -40,7 +40,7 @@ A short setup window on first launch shows the folders it found and the recommen
 
 Get it from [Releases](https://github.com/imlucaa/RRMusicPackMaker/releases). There's no installer, so run it from any folder you can write to.
 
-- `MusicPackMaker.exe` is 1.9 MB, and needs the .NET 9 Desktop Runtime.
+- `MusicPackMaker.exe` is 2 MB, and needs the .NET 9 Desktop Runtime.
 - `MusicPackMaker-NoDotNet.exe` is 50 MB, and needs nothing else installed.
 
 ## Build

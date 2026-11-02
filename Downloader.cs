@@ -610,14 +610,14 @@ public sealed class DownloadForm : Form
 {
     private readonly string _folder;
     private readonly FieldBox _query = new("Type a song name, or paste a link") { Dock = DockStyle.Fill };
-    private readonly ModernButton _go = new() { Text = "Search", Tag = Theme.AccentTag, Width = 110, Height = 32, Margin = new Padding(8, 0, 0, 0) };
+    private readonly ModernButton _go = new() { Text = "Search", Tag = Theme.AccentTag, Width = 110, Height = 28, Margin = new Padding(8, 0, 0, 0) };
     private readonly SideList _results = new() { Dock = DockStyle.Fill, Tag = Theme.PanelTag };
     private readonly Label _status = new() { AutoSize = false, Dock = DockStyle.Fill, Tag = Theme.MutedTag, TextAlign = ContentAlignment.MiddleLeft };
     private readonly ThinProgress _progress = new() { Dock = DockStyle.Bottom };
-    private readonly ModernButton _download = new() { Text = "Download", Tag = Theme.AccentTag, AutoSize = true, Height = 32, Margin = new Padding(6, 0, 0, 0), Enabled = false };
-    private readonly ModernButton _cancel = new() { Text = "Cancel", AutoSize = true, Height = 32 };
-    private readonly ModernButton _preview = new() { Text = "▶  Preview", AutoSize = true, Height = 32, Margin = new Padding(0, 0, 6, 0) };
-    private readonly ModernButton _stopPreview = new() { Text = "■  Stop", AutoSize = true, Height = 32, Margin = new Padding(0, 0, 6, 0), Visible = false };
+    private readonly ModernButton _download = new() { Text = "Download", Tag = Theme.AccentTag, AutoSize = true, Height = 28, Margin = new Padding(6, 0, 0, 0), Enabled = false };
+    private readonly ModernButton _cancel = new() { Text = "Cancel", AutoSize = true, Height = 28 };
+    private readonly ModernButton _preview = new() { Text = "▶  Preview", AutoSize = true, Height = 28, Margin = new Padding(0, 0, 6, 0) };
+    private readonly ModernButton _stopPreview = new() { Text = "■  Stop", AutoSize = true, Height = 28, Margin = new Padding(0, 0, 6, 0), Visible = false };
     private string? _previewing;
     private List<SearchResult> _found = [];
     private CancellationTokenSource? _work;

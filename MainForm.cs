@@ -8,7 +8,7 @@ public sealed class MainForm : Form
     private const string MySongs = "Songs I set";
     private const string AudioFilter = "Audio files|*.wav;*.mp3;*.flac;*.ogg;*.m4a;*.aac;*.opus;*.wma;*.brstm;*.webm;*.mp4|All files|*.*";
 
-    private readonly Font _titleFont = Theme.TitleFont();
+    private readonly Font _titleFont = Theme.TitleFont(11f);
     private List<TrackRow> _rows = [];
     private List<TrackRow> _visible = [];
     private TrackRow? _selected;
@@ -34,8 +34,7 @@ public sealed class MainForm : Form
     private readonly FieldBox _filter = new("Search tracks, files or songs") { Dock = DockStyle.Fill };
     private readonly SideList _sidebar = new() { Dock = DockStyle.Fill, Tag = Theme.PanelTag };
     private readonly CleanGrid _grid = new() { Dock = DockStyle.Fill };
-    private readonly ModernButton _themeButton = Header("");
-    private readonly ModernButton _build = new() { Text = "Add to Patches", Tag = Theme.AccentTag, AutoSize = true, Height = 34, Padding = new Padding(14, 2, 14, 2), Margin = new Padding(6, 0, 0, 0) };
+    private readonly ModernButton _build = new() { Text = "Add to Patches", Tag = Theme.AccentTag, AutoSize = true, Height = 28, Padding = new Padding(10, 0, 10, 0), Margin = new Padding(6, 0, 0, 0) };
     private readonly ModernButton _openFolder = Footer("Show exported pack");
     private readonly ModernButton _updateButton = Footer("Update available");
     private readonly ModernButton _previewPause = Footer("❚❚  Pause");
@@ -51,17 +50,17 @@ public sealed class MainForm : Form
     private bool _hearingSong;
     private int _hearRequest;
     private const string HearJumpText = "▶  Hear the jump";
-    private readonly ModernButton _deleteTrackSong = new() { Text = "Delete song", Height = 32, Dock = DockStyle.Fill, Margin = new Padding(4, 8, 0, 0) };
-    private readonly ModernButton _namesToggle = new() { Text = "Name and credits", Height = 30, Dock = DockStyle.Fill, Margin = new Padding(0, 14, 0, 4) };
+    private readonly ModernButton _deleteTrackSong = new() { Text = "Delete song", Height = 28, Dock = DockStyle.Fill, Margin = new Padding(4, 8, 0, 0) };
+    private readonly ModernButton _namesToggle = new() { Text = "Name and credits", Height = 28, Dock = DockStyle.Fill, Margin = new Padding(0, 14, 0, 4) };
     private readonly List<Control> _nameFields = [];
     private bool _showNames;
-    private readonly Panel _body = new() { Dock = DockStyle.Fill, Padding = new Padding(12, 0, 12, 0) };
+    private readonly Panel _body = new() { Dock = DockStyle.Fill, Padding = new Padding(6, 0, 6, 0) };
     private EditorPanel _editor = null!;
     private readonly ModernButton _export = Footer("Export pack");
     private readonly ModernButton _importPack = Footer("Import pack");
     private string _reportedIssues = "";
     private string _lastLogged = "";
-    private readonly ModernButton _hearCurrent = new() { Text = "▶  Hear current music", Height = 32, Dock = DockStyle.Fill, Margin = new Padding(0, 8, 0, 0) };
+    private readonly ModernButton _hearCurrent = new() { Text = "▶  Hear current music", Height = 28, Dock = DockStyle.Fill, Margin = new Padding(0, 8, 0, 0) };
     private readonly ComboBox _manyLoop = new FlatCombo { Width = 310, Margin = new Padding(0, 0, 0, 4) };
     private readonly ComboBox _manyFade = new FlatCombo { Width = 310, Margin = new Padding(0, 0, 0, 4) };
     private readonly ComboBox _manyVolume = new FlatCombo { Width = 310, Margin = new Padding(0, 0, 0, 8) };
@@ -87,23 +86,23 @@ public sealed class MainForm : Form
     private readonly Label _fileLabel = new() { AutoSize = true, Tag = Theme.MutedTag, Margin = new Padding(0, 0, 0, 2) };
     private readonly Label _note = new() { AutoSize = true, MaximumSize = new Size(310, 0), Tag = Theme.MutedTag, Margin = new Padding(0, 0, 0, 10) };
     private readonly Label _sourceLabel = new() { AutoSize = true, MaximumSize = new Size(310, 0), Tag = Theme.MutedTag, Margin = new Padding(0, 4, 0, 8) };
-    private readonly ModernButton _choose = new() { Text = "Choose song", Tag = Theme.AccentTag, Height = 34, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 4, 0) };
-    private readonly ModernButton _remove = new() { Text = "Take off track", Height = 34, Dock = DockStyle.Fill, Margin = new Padding(4, 0, 0, 0) };
-    private readonly ModernButton _fromWeb = new() { Text = "Find a song online", Height = 32, Dock = DockStyle.Fill, Margin = new Padding(0, 8, 4, 0) };
+    private readonly ModernButton _choose = new() { Text = "Choose song", Tag = Theme.AccentTag, Height = 28, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 4, 0) };
+    private readonly ModernButton _remove = new() { Text = "Take off track", Height = 28, Dock = DockStyle.Fill, Margin = new Padding(4, 0, 0, 0) };
+    private readonly ModernButton _fromWeb = new() { Text = "Find a song online", Height = 28, Dock = DockStyle.Fill, Margin = new Padding(0, 8, 4, 0) };
     private readonly FieldBox _song = new("Song name") { Dock = DockStyle.Top };
     private readonly FieldBox _credits = new("Credits") { Dock = DockStyle.Top };
     private readonly ComboBox _loopMode = new FlatCombo { Dock = DockStyle.Top };
     private readonly LoopThumb _thumb = new() { Dock = DockStyle.Top, Margin = new Padding(0, 6, 0, 4) };
     private readonly Label _loopSummary = new() { AutoSize = true, MaximumSize = new Size(310, 0), Tag = Theme.MutedTag, Margin = new Padding(0, 0, 0, 8) };
-    private readonly ModernButton _editLoop = new() { Text = "Edit loop", Height = 32, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 4, 8) };
-    private readonly ModernButton _hearJump = new() { Text = "▶  Hear the jump", Height = 32, Dock = DockStyle.Fill, Margin = new Padding(4, 0, 0, 8) };
+    private readonly ModernButton _editLoop = new() { Text = "Edit loop", Height = 28, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 4, 8) };
+    private readonly ModernButton _hearJump = new() { Text = "▶  Hear the jump", Height = 28, Dock = DockStyle.Fill, Margin = new Padding(4, 0, 0, 8) };
     private readonly ComboBox _crossfade = new FlatCombo { Dock = DockStyle.Top };
     private readonly ComboBox _volume = new FlatCombo { Dock = DockStyle.Top };
     private readonly ComboBox _speed = new FlatCombo { Dock = DockStyle.Top, MaxDropDownItems = 14 };
     private readonly Label _finalCaption = new() { Text = "Different song on the final lap", AutoSize = true, Margin = new Padding(0, 12, 0, 4) };
     private readonly Label _finalLabel = new() { AutoSize = true, MaximumSize = new Size(310, 0), Tag = Theme.MutedTag, Margin = new Padding(0, 0, 0, 6) };
-    private readonly ModernButton _finalChoose = new() { Text = "Choose", Height = 30, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 4, 0) };
-    private readonly ModernButton _finalRemove = new() { Text = "Remove", Height = 30, Dock = DockStyle.Fill, Margin = new Padding(4, 0, 0, 0) };
+    private readonly ModernButton _finalChoose = new() { Text = "Choose", Height = 28, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 4, 0) };
+    private readonly ModernButton _finalRemove = new() { Text = "Remove", Height = 28, Dock = DockStyle.Fill, Margin = new Padding(4, 0, 0, 0) };
 
     private readonly List<Control> _songOnly = [];
 
@@ -121,9 +120,6 @@ public sealed class MainForm : Form
         Font = Theme.UiFont();
         AutoScaleMode = AutoScaleMode.Dpi;
         _library = new SongLibrary(() => DownloadFolder);
-
-        bool dark = _settings.Theme switch { "Dark" => true, "Light" => false, _ => Theme.SystemPrefersDark() };
-        Theme.Set(dark);
 
         BuildLayout();
         ApplyTheme();
@@ -233,33 +229,34 @@ public sealed class MainForm : Form
         UpdateSummary();
     }
 
-    private static ModernButton Header(string text) => new() { Text = text, AutoSize = true, Height = 32, Margin = new Padding(6, 0, 0, 0) };
-    private static ModernButton Tab(string text) => new() { Text = text, IsPill = true, AutoSize = true, Height = 32, Margin = new Padding(0, 0, 6, 0) };
-    private static ModernButton Footer(string text) => new() { Text = text, AutoSize = true, Height = 34, Margin = new Padding(6, 0, 0, 0) };
+    private static ModernButton Header(string text) => new() { Text = text, AutoSize = true, Height = 26, Margin = new Padding(6, 0, 0, 0) };
+    private static ModernButton Tab(string text) => new() { Text = text, AutoSize = true, Height = 28, Margin = new Padding(0), Tag = Theme.GhostTag };
+    private static ModernButton Footer(string text) => new() { Text = text, AutoSize = true, Height = 28, Margin = new Padding(6, 0, 0, 0) };
 
     private void BuildLayout()
     {
         // App bar: name of the app and pack on the left, settings on the right.
-        var header = new Panel { Dock = DockStyle.Top, Height = 62 };
-        var headerLeft = new FlowLayoutPanel { Dock = DockStyle.Left, AutoSize = true, WrapContents = false, Padding = new Padding(16, 14, 0, 0) };
-        var brand = new Label { Text = "Music Pack Maker", AutoSize = true, Font = Theme.TitleFont(15f), Margin = new Padding(0, 3, 26, 0) };
-        _packName.Margin = new Padding(18, 0, 8, 0);
-        headerLeft.Controls.AddRange([brand, _tabTracks, _tabSongs, _tabEditor, _packName, _author]);
+        var header = new Panel { Dock = DockStyle.Top, Height = 42 };
+        var headerLeft = new FlowLayoutPanel { Dock = DockStyle.Left, AutoSize = true, WrapContents = false, Padding = new Padding(10, 7, 0, 0) };
+        var brand = new Label { Text = "Music Pack Maker", AutoSize = true, Font = Theme.TitleFont(10f), Margin = new Padding(0, 5, 18, 0) };
+        _packName.Margin = new Padding(14, 0, 6, 0);
+        var tabs = new SegmentedBar { Margin = new Padding(0, 0, 0, 0) };
+        tabs.Controls.AddRange([_tabTracks, _tabSongs, _tabEditor]);
+        headerLeft.Controls.AddRange([brand, tabs, _packName, _author]);
         _tabTracks.Click += (_, _) => ShowTab(editor: false);
         _tabSongs.Click += (_, _) => ShowSongs();
         _tabEditor.Click += (_, _) => ShowTab(editor: true);
-        _tabTracks.Tag = Theme.AccentTag;
-        var headerRight = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Padding = new Padding(0, 14, 12, 0) };
+        _tabTracks.Tag = Theme.ActiveTag;
+        var headerRight = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Padding = new Padding(0, 8, 10, 0) };
         var settings = Header("Settings");
-        headerRight.Controls.AddRange([_themeButton, settings]);
+        headerRight.Controls.Add(settings);
         header.Controls.Add(headerRight);
         header.Controls.Add(headerLeft);
         settings.Click += (_, _) => OpenSettings();
-        _themeButton.Click += (_, _) => ToggleTheme();
 
         // Bottom bar.
-        var footer = new Panel { Dock = DockStyle.Bottom, Height = 58 };
-        var footerRight = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Padding = new Padding(0, 12, 12, 0) };
+        var footer = new Panel { Dock = DockStyle.Bottom, Height = 42 };
+        var footerRight = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Padding = new Padding(0, 7, 10, 0) };
         footerRight.Controls.AddRange([_build, _export, _importPack, _openFolder, _updateButton, _previewStop, _previewPause]);
         _importPack.Click += async (_, _) => await PickPackToImportAsync();
         _previewPause.Click += (_, _) => AudioPreview.TogglePause();
@@ -283,7 +280,7 @@ public sealed class MainForm : Form
         _logPanel.Controls.Add(logCard);
 
         // Left card: where to look.
-        var sidebarHolder = new Panel { Dock = DockStyle.Left, Width = 228, Padding = new Padding(0, 0, 10, 0) };
+        var sidebarHolder = new Panel { Dock = DockStyle.Left, Width = 210, Padding = new Padding(0, 0, 6, 0) };
         var sidebarCard = new CardPanel { Dock = DockStyle.Fill };
         sidebarCard.Controls.Add(_sidebar);
         sidebarHolder.Controls.Add(sidebarCard);
@@ -291,7 +288,7 @@ public sealed class MainForm : Form
 
         // Middle card: the tracks.
         var centerCard = new CardPanel { Dock = DockStyle.Fill };
-        var searchRow = new TableLayoutPanel { Dock = DockStyle.Top, Height = 46, ColumnCount = 2, Padding = new Padding(4, 4, 4, 6) };
+        var searchRow = new TableLayoutPanel { Dock = DockStyle.Top, Height = 38, ColumnCount = 2, Padding = new Padding(2, 2, 2, 6) };
         searchRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         searchRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         var addSongs = new ModernButton { Text = "Add songs", AutoSize = true, Margin = new Padding(8, 0, 0, 0), Dock = DockStyle.Fill };
@@ -300,7 +297,7 @@ public sealed class MainForm : Form
         searchRow.Controls.Add(addSongs, 1, 0);
         addSongs.Click += (_, _) => AddSongsByName();
         _filter.Box.TextChanged += (_, _) => RefreshGrid();
-        var gridHolder = new Panel { Dock = DockStyle.Fill, Padding = new Padding(4, 0, 4, 4) };
+        var gridHolder = new Panel { Dock = DockStyle.Fill, Padding = new Padding(0) };
         gridHolder.Controls.Add(_grid);
         centerCard.Controls.Add(gridHolder);
         centerCard.Controls.Add(_chips);
@@ -308,7 +305,7 @@ public sealed class MainForm : Form
         ConfigureGrid();
 
         // Right card: the selected track.
-        var detailsHolder = new Panel { Dock = DockStyle.Right, Width = 384, Padding = new Padding(10, 0, 0, 0) };
+        var detailsHolder = new Panel { Dock = DockStyle.Right, Width = 384, Padding = new Padding(6, 0, 0, 0) };
         var detailsCard = new CardPanel { Dock = DockStyle.Fill, Padding = new Padding(4, 8, 4, 8) };
         var detailsScroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Tag = Theme.PanelTag };
         BuildSinglePanel();
@@ -359,7 +356,7 @@ public sealed class MainForm : Form
             other.Visible = other == page;
         foreach (var button in new[] { _tabTracks, _tabSongs, _tabEditor })
         {
-            button.Tag = button == tab ? Theme.AccentTag : "";
+            button.Tag = button == tab ? Theme.ActiveTag : Theme.GhostTag;
             button.Invalidate();
         }
     }
@@ -449,10 +446,10 @@ public sealed class MainForm : Form
             {
                 Text = value.Length == 0 ? "All" : value,
                 IsPill = true,
-                Height = 28,
+                Height = 24,
                 AutoSize = true,
                 Margin = new Padding(0, 0, 6, 6),
-                Tag = value == _platform ? Theme.AccentTag : "",
+                Tag = value == _platform ? Theme.ActiveTag : "",
             };
             chip.Click += (_, _) => PickPlatform(value);
             _chips.Controls.Add(chip);
@@ -465,7 +462,7 @@ public sealed class MainForm : Form
         int index = 0;
         foreach (ModernButton chip in _chips.Controls)
         {
-            chip.Tag = (index == 0 ? "" : chip.Text) == platform ? Theme.AccentTag : "";
+            chip.Tag = (index == 0 ? "" : chip.Text) == platform ? Theme.ActiveTag : "";
             chip.Invalidate();
             index++;
         }
@@ -501,7 +498,7 @@ public sealed class MainForm : Form
 
         void Section(string text)
         {
-            var label = new Label { Text = text.ToUpperInvariant(), AutoSize = true, Tag = Theme.MutedTag, Font = Theme.UiFont(8f), Margin = new Padding(0, 16, 0, 4) };
+            var label = new Label { Text = text, AutoSize = true, Font = Theme.TitleFont(9.5f), Margin = new Padding(0, 14, 0, 2) };
             Wide(label);
             _songOnly.Add(label);
         }
@@ -614,7 +611,7 @@ public sealed class MainForm : Form
     {
         ModernButton Wide(string text, string tag, Action click)
         {
-            var button = new ModernButton { Text = text, Tag = tag, Width = 310, Height = 34, Margin = new Padding(0, 0, 0, 8) };
+            var button = new ModernButton { Text = text, Tag = tag, Width = 310, Height = 28, Margin = new Padding(0, 0, 0, 8) };
             button.Click += (_, _) => click();
             return button;
         }
@@ -888,8 +885,8 @@ public sealed class MainForm : Form
         _grid.ReadOnly = true;
         _grid.AllowDrop = true;
         _grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-        _grid.RowTemplate.Height = 36;
-        _grid.ColumnHeadersHeight = 32;
+        _grid.RowTemplate.Height = 24;
+        _grid.ColumnHeadersHeight = 24;
         _grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
         _grid.RowHeadersWidthSizeMode = DataGridViewRowHeadersWidthSizeMode.DisableResizing;
 
@@ -910,7 +907,14 @@ public sealed class MainForm : Form
         };
         _grid.CellPainting += (_, e) =>
         {
-            // Status is a small pill. The row behind it was already painted.
+            if (e.ColumnIndex == 0 && e.RowIndex >= 0 && e.RowIndex < _visible.Count && e.Graphics != null)
+            {
+                e.Handled = true;
+                PaintTrackName(e.Graphics, e.CellBounds, _visible[e.RowIndex], (e.State & DataGridViewElementStates.Selected) != 0);
+                return;
+            }
+
+            // Status is short colored text. The row behind it was already painted.
             if (e.ColumnIndex != 2 || e.RowIndex < 0 || e.RowIndex >= _visible.Count)
                 return;
             e.Handled = true;
@@ -918,25 +922,10 @@ public sealed class MainForm : Form
             if (status.Length == 0 || e.Graphics == null)
                 return;
             var p = Theme.Current;
-            var size = TextRenderer.MeasureText(status, _pillFont);
-            var pill = new Rectangle(e.CellBounds.X + 8, e.CellBounds.Y + (e.CellBounds.Height - 22) / 2, size.Width + 12, 22);
-            Color text;
-            if (status is "Failed" or "Missing")
-            {
-                Theme.FillBox(e.Graphics, pill, p.Bad, null, 10);
-                text = p.OnAccent;
-            }
-            else if (status == "Ready")
-            {
-                Theme.FillBox(e.Graphics, pill, Color.Transparent, p.Muted, 10);
-                text = p.Muted;
-            }
-            else
-            {
-                Theme.FillBox(e.Graphics, pill, p.Accent, null, 10);
-                text = p.OnAccent;
-            }
-            TextRenderer.DrawText(e.Graphics, status, _pillFont, pill, text, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            Color text = status is "Failed" or "Missing" ? p.Bad : status == "Ready" ? p.Muted : p.Accent;
+            var area = new Rectangle(e.CellBounds.X + 6, e.CellBounds.Y, e.CellBounds.Width - 8, e.CellBounds.Height);
+            TextRenderer.DrawText(e.Graphics, status, _grid.Font, area, text,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
         };
         _grid.RowPrePaint += (_, e) =>
         {
@@ -945,10 +934,18 @@ public sealed class MainForm : Form
             using (var back = new SolidBrush(p.Panel))
                 e.Graphics.FillRectangle(back, row);
             bool selected = (e.State & DataGridViewElementStates.Selected) != 0;
+            var line = new Rectangle(row.X, row.Y, Math.Min(row.Width, _grid.Columns.GetColumnsWidth(DataGridViewElementStates.Visible)), row.Height);
             if (selected || e.RowIndex == _dropIndex)
-                Theme.FillBox(e.Graphics, new Rectangle(row.X, row.Y + 1, Math.Min(row.Width, _grid.Columns.GetColumnsWidth(DataGridViewElementStates.Visible)), row.Height - 2), p.Selection);
+            {
+                using (var fill = new SolidBrush(p.Selection))
+                    e.Graphics.FillRectangle(fill, line);
+                Theme.SelectionBar(e.Graphics, row.X, row.Y, row.Height);
+            }
             else if (e.RowIndex == _hoverRow)
-                Theme.FillBox(e.Graphics, new Rectangle(row.X, row.Y + 1, Math.Min(row.Width, _grid.Columns.GetColumnsWidth(DataGridViewElementStates.Visible)), row.Height - 2), p.Raised);
+            {
+                using var fill = new SolidBrush(p.Hover);
+                e.Graphics.FillRectangle(fill, line);
+            }
             e.PaintParts = DataGridViewPaintParts.ContentForeground;
         };
         _grid.CellMouseEnter += (_, e) => SetHoverRow(e.RowIndex);
@@ -988,6 +985,31 @@ public sealed class MainForm : Form
                 HandleDrop(files, index);
         };
     }
+
+    /// <summary>
+    /// Tracks start with their console in grey, so the list can be scanned by console at a glance.
+    /// The console always takes the same width, which keeps the track names lined up.
+    /// </summary>
+    private void PaintTrackName(Graphics g, Rectangle cell, TrackRow row, bool selected)
+    {
+        var p = Theme.Current;
+        string name = row.Name;
+        int x = cell.X + 8;
+        if (row.Platform.Length > 0 && name.StartsWith(row.Platform + " ", StringComparison.Ordinal))
+        {
+            _badgeWidth ??= TextRenderer.MeasureText("Wii U", _grid.Font).Width + 6;
+            var badge = new Rectangle(x, cell.Y, _badgeWidth.Value, cell.Height);
+            TextRenderer.DrawText(g, row.Platform, _grid.Font, badge, p.Muted,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            x = badge.Right + 4;
+            name = name[(row.Platform.Length + 1)..];
+        }
+        var text = new Rectangle(x, cell.Y, cell.Right - x - 6, cell.Height);
+        TextRenderer.DrawText(g, name, _grid.Font, text, selected ? p.SelectionText : p.Text,
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+    }
+
+    private int? _badgeWidth;
 
     private void SetHoverRow(int index)
     {
@@ -1053,20 +1075,11 @@ public sealed class MainForm : Form
     private void ApplyTheme()
     {
         Theme.Apply(this);
-        _themeButton.Text = Theme.Current.IsDark ? "Light" : "Dark";
         _title.Font = _titleFont;
-        _sidebar.ItemHeight = 34;
+        _sidebar.ItemHeight = 24;
         _manyTitle.Font = _titleFont;
         _sidebar.Invalidate();
         _grid.Invalidate();
-    }
-
-    internal void ToggleTheme()
-    {
-        Theme.Set(!Theme.Current.IsDark);
-        _settings.Theme = Theme.Current.IsDark ? "Dark" : "Light";
-        AppStorage.SaveSettings(_settings);
-        ApplyTheme();
     }
 
     private void MarkDirty()
@@ -1174,7 +1187,7 @@ public sealed class MainForm : Form
         _sidebar.Items.Add(new SideList.Item(MySongs, _rows.Count(r => r.IsAssigned)));
         foreach (var (title, categories) in Catalog.Groups)
         {
-            var present = categories.Where(category => _rows.Any(r => r.Category == category)).ToList();
+            var present = categories.Where(category => !Catalog.HiddenFromSidebar.Contains(category) && _rows.Any(r => r.Category == category)).ToList();
             if (present.Count == 0)
                 continue;
             _sidebar.Items.Add(new SideList.Item(title, SideList.HeaderCount));
@@ -2479,7 +2492,7 @@ public sealed class SettingsForm : Form
             Tag = Theme.MutedTag,
             Margin = new Padding(0),
         };
-        var ffmpegButton = new ModernButton { Text = hasFfmpeg ? "Reinstall" : "Install", AutoSize = true, Height = 32, Margin = new Padding(6, 0, 0, 0), Tag = hasFfmpeg ? "" : Theme.AccentTag };
+        var ffmpegButton = new ModernButton { Text = hasFfmpeg ? "Reinstall" : "Install", AutoSize = true, Height = 28, Margin = new Padding(6, 0, 0, 0), Tag = hasFfmpeg ? "" : Theme.AccentTag };
         ffmpegButton.Click += (_, _) =>
         {
             WantsFfmpeg = true;
@@ -2530,8 +2543,8 @@ public sealed class SettingsForm : Form
         layout.SetColumnSpan(projectButtons, 2);
 
         var buttons = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.RightToLeft, Dock = DockStyle.Fill, Margin = new Padding(0, 14, 0, 0) };
-        var ok = new ModernButton { Text = "Save", Tag = Theme.AccentTag, AutoSize = true, Height = 32, Margin = new Padding(6, 0, 0, 0) };
-        var cancel = new ModernButton { Text = "Cancel", AutoSize = true, Height = 32 };
+        var ok = new ModernButton { Text = "Save", Tag = Theme.AccentTag, AutoSize = true, Height = 28, Margin = new Padding(6, 0, 0, 0) };
+        var cancel = new ModernButton { Text = "Cancel", AutoSize = true, Height = 28 };
         ok.Click += (_, _) => Accept();
         cancel.Click += (_, _) => Close();
         buttons.Controls.AddRange([ok, cancel]);
@@ -2543,14 +2556,14 @@ public sealed class SettingsForm : Form
 
     private static ModernButton Clear(FieldBox field)
     {
-        var button = new ModernButton { Text = "Clear", AutoSize = true, Height = 32, Margin = new Padding(6, 0, 0, 0) };
+        var button = new ModernButton { Text = "Clear", AutoSize = true, Height = 28, Margin = new Padding(6, 0, 0, 0) };
         button.Click += (_, _) => field.Box.Text = "";
         return button;
     }
 
     private ModernButton Browse(FieldBox field, string description)
     {
-        var button = new ModernButton { Text = "Browse", AutoSize = true, Height = 32, Margin = new Padding(6, 0, 0, 0) };
+        var button = new ModernButton { Text = "Browse", AutoSize = true, Height = 28, Margin = new Padding(6, 0, 0, 0) };
         button.Click += (_, _) =>
         {
             using var dialog = new FolderBrowserDialog { Description = description, UseDescriptionForTitle = true, InitialDirectory = field.Box.Text };

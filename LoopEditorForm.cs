@@ -41,7 +41,7 @@ public sealed class LoopEditorForm : Form
     }
 
     private static ModernButton Make(string text, string tag = "") =>
-        new() { Text = text, AutoSize = true, Height = 32, Padding = new Padding(8, 2, 8, 2), Margin = new Padding(0, 0, 6, 0), Tag = tag };
+        new() { Text = text, AutoSize = true, Height = 28, Padding = new Padding(8, 2, 8, 2), Margin = new Padding(0, 0, 6, 0), Tag = tag };
 
     private void BuildLayout()
     {
@@ -147,7 +147,7 @@ public sealed class LoopEditorForm : Form
         for (int i = 0; i < steps.Length; i++)
         {
             int delta = steps[i].Delta;
-            var button = new ModernButton { Text = steps[i].Text, Width = 64, Height = 30, Margin = new Padding(0, 1, 4, 3) };
+            var button = new ModernButton { Text = steps[i].Text, Width = 64, Height = 28, Margin = new Padding(0, 1, 4, 3) };
             button.Click += (_, _) => nudge(delta);
             table.Controls.Add(button, 2 + i, row);
         }

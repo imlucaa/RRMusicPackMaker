@@ -309,28 +309,66 @@ public class MusicSearchTests
 
 public class ThemeTests
 {
-    [Fact]
-    public void Dark_IsPitchBlackWithWhiteAccent()
+    // WCAG contrast between two colors, from 1 to 21.
+    private static double Contrast(Color a, Color b)
     {
-        Assert.Equal(Color.Black.ToArgb(), Theme.Dark.Window.ToArgb());
-        Assert.Equal(Color.White.ToArgb(), Theme.Dark.Accent.ToArgb());
-        Assert.Equal(Color.White.ToArgb(), Theme.Dark.Text.ToArgb());
+        static double Channel(int value)
+        {
+            double c = value / 255.0;
+            return c <= 0.03928 ? c / 12.92 : Math.Pow((c + 0.055) / 1.055, 2.4);
+        }
+        static double Luminance(Color c) => 0.2126 * Channel(c.R) + 0.7152 * Channel(c.G) + 0.0722 * Channel(c.B);
+        double x = Luminance(a), y = Luminance(b);
+        return (Math.Max(x, y) + 0.05) / (Math.Min(x, y) + 0.05);
     }
 
     [Fact]
-    public void Light_IsPureWhiteWithBlackAccent()
+    public void Text_IsReadableOnEverySurface()
     {
-        Assert.Equal(Color.White.ToArgb(), Theme.Light.Window.ToArgb());
-        Assert.Equal(Color.Black.ToArgb(), Theme.Light.Accent.ToArgb());
-        Assert.Equal(Color.Black.ToArgb(), Theme.Light.Text.ToArgb());
+        var p = Theme.Dark;
+        foreach (var surface in new[] { p.Window, p.Panel, p.Raised, p.Hover })
+        {
+            Assert.True(Contrast(p.Text, surface) >= 4.5, $"text on {surface}");
+            Assert.True(Contrast(p.Muted, surface) >= 4.5, $"muted text on {surface}");
+        }
     }
 
     [Fact]
-    public void Palettes_HaveNoColorExceptTheErrorRed()
+    public void Buttons_AndSelections_AreReadable()
     {
-        foreach (var p in new[] { Theme.Dark, Theme.Light })
-            foreach (var c in new[] { p.Window, p.Panel, p.Raised, p.Border, p.Text, p.Muted, p.Accent, p.AccentHover, p.OnAccent, p.Selection, p.SelectionText, p.Good, p.Wave, p.LoopFill })
-                Assert.True(c.R == c.G && c.G == c.B, $"{c} is not gray");
+        var p = Theme.Dark;
+        Assert.True(Contrast(p.OnAccent, p.Accent) >= 4.5, "check box tick");
+        Assert.True(Contrast(p.SelectionText, p.Selection) >= 4.5, "selected row");
+        Assert.True(Contrast(p.Text, p.Hover) >= 4.5, "hovered button");
+        Assert.True(Contrast(p.Accent, p.Panel) >= 4.5, "status text");
+        Assert.True(Contrast(p.Bad, p.Panel) >= 4.5, "failed status text");
+    }
+
+    [Fact]
+    public void SelectionBar_AndOutlines_StandOut()
+    {
+        // Shapes that carry meaning need 3:1 against what's around them.
+        var p = Theme.Dark;
+        Assert.True(Contrast(p.Accent, p.Selection) >= 3, "selection bar");
+        Assert.True(Contrast(Color.White, p.Raised) >= 3, "main button outline");
+        Assert.True(Contrast(p.Text, p.Panel) >= 3, "focus ring");
+    }
+
+    [Fact]
+    public void ThereIsOnlyTheDarkTheme()
+    {
+        Assert.Same(Theme.Dark, Theme.Current);
+        Assert.True(Theme.Current.IsDark);
+        Assert.Null(typeof(Theme).GetField("Light"));
+    }
+
+    [Fact]
+    public void Fonts_AreTheWindowsOnes()
+    {
+        using var body = Theme.UiFont();
+        using var heading = Theme.TitleFont();
+        Assert.StartsWith("Segoe UI", body.FontFamily.Name);
+        Assert.StartsWith("Segoe UI", heading.FontFamily.Name);
     }
 }
 
@@ -402,9 +440,7 @@ public class FlatCheckTests
         {
             try
             {
-                foreach (var palette in new[] { true, false })
                 {
-                    Theme.Set(palette);
                     using var box = new FlatCheck { Text = "Option", Width = 120, Height = 24 };
                     using var off = new Bitmap(120, 24);
                     using var on = new Bitmap(120, 24);

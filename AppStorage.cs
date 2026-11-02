@@ -4,8 +4,6 @@ namespace RRMusicPackMaker;
 
 public sealed class AppSettings
 {
-    /// <summary>"Light", "Dark" or "System".</summary>
-    public string Theme { get; set; } = "System";
     public string OutputFolder { get; set; } = "";
 
     /// <summary>Raises the music volumes in the player's own copy of revo_kart.brsar when installing.</summary>

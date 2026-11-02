@@ -70,7 +70,7 @@ public sealed class EditorPanel : Panel
     private readonly ModernButton _redoButton = Tool("Redo");
     private readonly ModernButton _clear = Tool("Clear");
     private readonly ModernButton _save = Tool("Save song", Theme.AccentTag);
-    private readonly ModernButton _deleteSong = new() { Text = "Delete song", Width = 262, Height = 32, Margin = new Padding(0, 0, 0, 10) };
+    private readonly ModernButton _deleteSong = new() { Text = "Delete song", Width = 262, Height = 28, Margin = new Padding(0, 0, 0, 10) };
     private readonly System.Windows.Forms.Timer _tick = new() { Interval = 50 };
     private long _playFrom;
     private int _playRequest;
@@ -97,13 +97,13 @@ public sealed class EditorPanel : Panel
     }
 
     private static ModernButton Tool(string text, string tag = "") =>
-        new() { Text = text, AutoSize = true, Height = 32, Margin = new Padding(0, 0, 6, 6), Tag = tag };
+        new() { Text = text, AutoSize = true, Height = 28, Margin = new Padding(0, 0, 6, 6), Tag = tag };
 
     private void BuildLayout()
     {
-        var addSong = new ModernButton { Text = "Add to timeline", Tag = Theme.AccentTag, Width = 262, Height = 34, Margin = new Padding(0, 8, 0, 6) };
-        var openFile = new ModernButton { Text = "Import songs or parts", Width = 262, Height = 32, Margin = new Padding(0, 0, 0, 6) };
-        var findOnline = new ModernButton { Text = "Find a song online", Width = 262, Height = 32, Margin = new Padding(0, 0, 0, 6) };
+        var addSong = new ModernButton { Text = "Add to timeline", Tag = Theme.AccentTag, Width = 262, Height = 28, Margin = new Padding(0, 8, 0, 6) };
+        var openFile = new ModernButton { Text = "Import songs or parts", Width = 262, Height = 28, Margin = new Padding(0, 0, 0, 6) };
+        var findOnline = new ModernButton { Text = "Find a song online", Width = 262, Height = 28, Margin = new Padding(0, 0, 0, 6) };
         var songsTop = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(10, 10, 0, 0) };
         songsTop.Controls.Add(new Label { Text = "Your songs", AutoSize = true, Font = Theme.TitleFont(11f), Margin = new Padding(0) });
         songsTop.Controls.Add(new Label { Text = "Drag one onto the timeline, or double-click.", AutoSize = true, Tag = Theme.MutedTag, Margin = new Padding(0, 2, 0, 0) });

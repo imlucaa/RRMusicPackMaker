@@ -110,27 +110,6 @@ public class WindowTests : IDisposable
     }
 
     [Fact]
-    public void Theme_TogglesBothWays_AndRemembersChoice() => OnUiThread(() =>
-    {
-        using (var form = OpenWindow())
-        {
-            bool start = Theme.Current.IsDark;
-            form.ToggleTheme();
-            Assert.NotEqual(start, Theme.Current.IsDark);
-            Application.DoEvents();
-            form.ToggleTheme();
-            Assert.Equal(start, Theme.Current.IsDark);
-            form.ToggleTheme();
-            form.Close();
-        }
-        bool saved = Theme.Current.IsDark;
-        Theme.Set(!saved);
-        using var again = OpenWindow();
-        Assert.Equal(saved, Theme.Current.IsDark);
-        again.Close();
-    });
-
-    [Fact]
     public void Drop_OneSongOnATrack_SetsOnlyThatTrack() => OnUiThread(() =>
     {
         string song = WriteSong();
@@ -221,6 +200,23 @@ public class WindowTests : IDisposable
     });
 
     [Fact]
+    public void Sidebar_HidesTheStockMusicCategories() => OnUiThread(() =>
+    {
+        using var form = OpenWindow();
+        var names = new List<string>();
+        for (int i = 0; i < form.SidebarCountForTest; i++)
+        {
+            form.PickSidebarIndexForTest(i);
+            if (form.SidebarSelectionForTest is SideList.Item item)
+                names.Add(item.Name);
+        }
+        Assert.Contains(Catalog.CatMenu, names);
+        Assert.DoesNotContain(Catalog.CatStock, names);
+        Assert.DoesNotContain(Catalog.CatStockBattle, names);
+        form.Close();
+    });
+
+    [Fact]
     public void Sidebar_SectionTitles_CannotBeSelected() => OnUiThread(() =>
     {
         using var form = OpenWindow();
@@ -246,16 +242,13 @@ public class WindowTests : IDisposable
     });
 
     [Fact]
-    public void Thumbnail_AndStatusPills_DrawWithoutErrors_InBothThemes() => OnUiThread(() =>
+    public void Thumbnail_AndStatus_DrawWithoutErrors() => OnUiThread(() =>
     {
         string song = WriteSong();
         using var form = OpenWindow();
         form.HandleDrop([song], 0);
-        form.ToggleTheme();
         Application.DoEvents();
         using var bitmap = new Bitmap(form.Width, form.Height);
-        form.DrawToBitmap(bitmap, new Rectangle(0, 0, form.Width, form.Height));
-        form.ToggleTheme();
         form.DrawToBitmap(bitmap, new Rectangle(0, 0, form.Width, form.Height));
         form.Close();
     });
@@ -374,7 +367,7 @@ public class WindowTests : IDisposable
     private (MainForm Form, string File) WindowWithSong()
     {
         string song = WriteSong();
-        AppStorage.SaveSettings(new AppSettings { Theme = "Dark", OutputFolder = Path.Combine(_data, "packs") });
+        AppStorage.SaveSettings(new AppSettings { OutputFolder = Path.Combine(_data, "packs") });
         var form = OpenWindow();
         form.HandleDrop([song], 0);
         return (form, form.Rows.First(r => r.IsAssigned).FileBase + ".brstm");
@@ -529,7 +522,7 @@ public class WindowTests : IDisposable
     public void ImportPack_StockNames_ShowUnderSongsISet_AndRebuildWithTheirFinalLapFiles() => OnUiThread(() =>
     {
         string song = WriteSong();
-        AppStorage.SaveSettings(new AppSettings { Theme = "Dark", OutputFolder = Path.Combine(_data, "packs") });
+        AppStorage.SaveSettings(new AppSettings { OutputFolder = Path.Combine(_data, "packs") });
         using var form = OpenWindow();
 
         // A pack spelled the way a shared one is: lower case, with its own final lap file.
@@ -818,7 +811,7 @@ public class WindowTests : IDisposable
     public void ImportPack_ZeroTypo_GoesOnTheFanfare_AndRebuildsWithTheRightName() => OnUiThread(() =>
     {
         string song = WriteSong();
-        AppStorage.SaveSettings(new AppSettings { Theme = "Dark", OutputFolder = Path.Combine(_data, "packs") });
+        AppStorage.SaveSettings(new AppSettings { OutputFolder = Path.Combine(_data, "packs") });
         using var form = OpenWindow();
         var maker = new TrackRow { Name = "x", FileBase = "0_FanfareTA1st_32", Source = song, FixedRate = 32000 };
         var made = PackBuilder.Build(new Options { PackName = "Shared" }, [maker], Path.Combine(_data, "made"), _ => { });
@@ -910,7 +903,7 @@ public class WindowTests : IDisposable
     public void Editor_SplitDeleteJoinAndSave_MakesASongThatCanBeUsed() => OnUiThread(() =>
     {
         string song = WriteSong(6);
-        AppStorage.SaveSettings(new AppSettings { Theme = "Dark", OutputFolder = Path.Combine(_data, "packs") });
+        AppStorage.SaveSettings(new AppSettings { OutputFolder = Path.Combine(_data, "packs") });
         using var form = OpenWindow();
         var opening = form.ShowTab(editor: true);
         Pump(() => opening.IsCompleted);
@@ -1003,7 +996,7 @@ public class WindowTests : IDisposable
     public void Editor_SameSongWrittenTwoWays_IsListedOnce_AndLoadingStaysOutOfTheLog() => OnUiThread(() =>
     {
         string song = WriteSong(3);
-        AppStorage.SaveSettings(new AppSettings { Theme = "Dark", OutputFolder = Path.Combine(_data, "packs") });
+        AppStorage.SaveSettings(new AppSettings { OutputFolder = Path.Combine(_data, "packs") });
         using var form = OpenWindow();
         var opening = form.ShowTab(editor: true);
         Pump(() => opening.IsCompleted);
@@ -1036,7 +1029,7 @@ public class WindowTests : IDisposable
         Directory.CreateDirectory(folder);
         string download = Path.Combine(folder, "download.wav");
         File.Copy(WriteSong(3), download);
-        AppStorage.SaveSettings(new AppSettings { Theme = "Dark", OutputFolder = Path.Combine(_data, "packs") });
+        AppStorage.SaveSettings(new AppSettings { OutputFolder = Path.Combine(_data, "packs") });
         var form = OpenWindow();
         var opening = form.ShowTab(editor: true);
         Pump(() => opening.IsCompleted);
@@ -1280,7 +1273,7 @@ public class WindowTests : IDisposable
     [Fact]
     public void SongPick_NoSongs_SaysSoAndCantBeOpened() => OnUiThread(() =>
     {
-        AppStorage.SaveSettings(new AppSettings { Theme = "Dark", OutputFolder = Path.Combine(_data, "packs") });
+        AppStorage.SaveSettings(new AppSettings { OutputFolder = Path.Combine(_data, "packs") });
         using var form = OpenWindow();
         form.SelectVisible(0);
         Application.DoEvents();
@@ -1378,7 +1371,7 @@ public class WindowTests : IDisposable
     public void SongList_ImportedSongs_AreStillThereNextTime() => OnUiThread(() =>
     {
         string imported = WriteSong(2);
-        AppStorage.SaveSettings(new AppSettings { Theme = "Dark", OutputFolder = Path.Combine(_data, "packs") });
+        AppStorage.SaveSettings(new AppSettings { OutputFolder = Path.Combine(_data, "packs") });
         using (var form = OpenWindow())
         {
             var opening = form.ShowTab(editor: true);
@@ -1651,7 +1644,7 @@ public class WindowTests : IDisposable
     public void AddToPatches_SongMissing_InstallsNothing() => OnUiThread(() =>
     {
         string song = WriteSong();
-        AppStorage.SaveSettings(new AppSettings { Theme = "Dark", OutputFolder = Path.Combine(_data, "packs") });
+        AppStorage.SaveSettings(new AppSettings { OutputFolder = Path.Combine(_data, "packs") });
         using var form = OpenWindow();
         form.HandleDrop([song], 0);
         File.Delete(song);
@@ -1669,7 +1662,7 @@ public class WindowTests : IDisposable
     {
         string song = WriteSong();
         string output = Path.Combine(_data, "packs");
-        AppStorage.SaveSettings(new AppSettings { Theme = "Light", OutputFolder = output });
+        AppStorage.SaveSettings(new AppSettings { OutputFolder = output });
         using var form = OpenWindow();
         form.HandleDrop([song], 0);
         string file = form.Rows.First(r => r.IsAssigned).FileBase;
