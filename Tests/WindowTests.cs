@@ -385,6 +385,100 @@ public class WindowTests : IDisposable
     });
 
     [Fact]
+    public void ManyTracks_VolumeNudges_AddAndTakeAwayADecibel() => OnUiThread(() =>
+    {
+        using var form = OpenWindow();
+        form.SelectVisible(0, 1, 2);
+        Application.DoEvents();
+        var rows = form.SelectedRows();
+        rows[0].VolumeDb = 3;
+        rows[1].VolumeDb = 12;
+        rows[2].VolumeDb = -12;
+        form.NudgeVolumeForTest(1);
+        Assert.Equal([4, 12, -11], rows.Select(r => r.VolumeDb).ToArray());
+        form.NudgeVolumeForTest(-1);
+        form.NudgeVolumeForTest(-1);
+        Assert.Equal([2, 10, -12], rows.Select(r => r.VolumeDb).ToArray());
+
+        // One track shows the new volume by name, even between the old 3 dB steps.
+        form.SelectVisible(0);
+        Application.DoEvents();
+        Assert.Equal("+2 dB", form.VolumeComboForTest.Text);
+        form.Close();
+    });
+
+    [Fact]
+    public void FinalLapSong_HasVolumeAndSpeed_OnlyOnceOneIsPicked() => OnUiThread(() =>
+    {
+        string song = WriteSong(3);
+        using var form = OpenWindow();
+        form.HandleDrop([song], 0);
+        form.SelectVisible(0);
+        Application.DoEvents();
+        var row = form.SelectedRows().Single();
+        Assert.False(form.FinalSongSettingsVisibleForTest);
+
+        row.FinalSource = song;
+        form.RefreshDetailsForTest();
+        Assert.True(form.FinalSongSettingsVisibleForTest);
+        form.FinalVolumeComboForTest.SelectedIndex = 1 + PackBuilder.VolumeIndex(-3);
+        form.FinalSongSpeedComboForTest.SelectedIndex = 1 + PackBuilder.SpeedIndex(1.25, false);
+        Assert.Equal(-3, row.FinalVolumeDb);
+        Assert.Equal(1.25, row.FinalSongSpeed);
+
+        form.FinalVolumeComboForTest.SelectedIndex = 0;
+        form.FinalSongSpeedComboForTest.SelectedIndex = 0;
+        Assert.Null(row.FinalVolumeDb);
+        Assert.Equal(0, row.FinalSongSpeed);
+        form.Close();
+    });
+
+    [Fact]
+    public void Editor_Fades_ShapeTheSavedSong_AndAreRemembered() => OnUiThread(() =>
+    {
+        string song = WriteSong(6);
+        AppStorage.SaveSettings(new AppSettings { OutputFolder = Path.Combine(_data, "packs") });
+        using (var form = OpenWindow())
+        {
+            var opening = form.ShowTab(editor: true);
+            Pump(() => opening.IsCompleted);
+            var editor = form.EditorForTest;
+            var adding = editor.AddSongAsync(song);
+            Pump(() => adding.IsCompleted);
+            int twoSeconds = Array.FindIndex(EditorPanel.FadeChoices, choice => choice.Seconds == 2);
+            editor.SetFadesForTest(twoSeconds, twoSeconds);
+
+            var saving = editor.SaveAsync();
+            Pump(() => saving.IsCompleted);
+            var saved = AudioIO.Decode(saving.Result!, 44100)[0];
+            Assert.True(Math.Abs((int)saved[10]) < 200, "starts silent");
+            Assert.True(Math.Abs((int)saved[^10]) < 200, "ends silent");
+            form.Close();
+        }
+        Assert.Equal(EditorState.Load().FadeIn, Array.FindIndex(EditorPanel.FadeChoices, choice => choice.Seconds == 2));
+        Assert.Equal(EditorState.Load().FadeOut, Array.FindIndex(EditorPanel.FadeChoices, choice => choice.Seconds == 2));
+    });
+
+    [Fact]
+    public void Editor_DeleteSong_ImportedFile_CanDeleteTheFileToo() => OnUiThread(() =>
+    {
+        var (form, editor, _, removed) = EditorWithDownload();
+        using (form)
+        {
+            string mine = WriteSong(2);
+            var adding = editor.AddSongAsync(mine);
+            Pump(() => adding.IsCompleted);
+            Assert.False(editor.IsDownloadedSong(mine));
+
+            Assert.True(editor.DeleteSong(mine, deleteFile: true));
+
+            Assert.Contains(mine, removed);
+            Assert.DoesNotContain(mine, editor.SongPaths);
+            form.Close();
+        }
+    });
+
+    [Fact]
     public void SpeedChoices_SetOneTrackOrMany_AndShowWhatsSet() => OnUiThread(() =>
     {
         using var form = OpenWindow();
@@ -471,7 +565,96 @@ public class WindowTests : IDisposable
     }
 
     [Fact]
-    public void AddToPatches_PutsSongInPatchesAndMod() => OnUiThread(() =>
+    public void AddToGame_WithoutAModsList_PutsSongsInStrm() => OnUiThread(() =>
+    {
+        var (form, file) = WindowWithSong();
+        using (form)
+        {
+            // Wheel Wizard's Mods folder isn't used, but the Retro Rewind folder is set.
+            AppStorage.SaveSettings(new AppSettings { OutputFolder = Path.Combine(_data, "packs"), UseWheelWizard = false });
+            Environment.SetEnvironmentVariable("RRMUSIC_MODS", null);
+            var add = form.AddToPatchesAsync();
+            Pump(() => add.IsCompleted);
+            Assert.True(add.IsCompletedSuccessfully, add.Exception?.ToString());
+            Assert.True(File.Exists(Path.Combine(_data, "rr", "strm", file)));
+            form.Close();
+        }
+    });
+
+    [Fact]
+    public void ImportPack_FromTheGamesStrmFolder_OnlyBringsInTheSongsYouAdded() => OnUiThread(() =>
+    {
+        var (form, file) = WindowWithSong();
+        using (form)
+        {
+            string strm = Path.Combine(_data, "rr", "strm");
+            Directory.CreateDirectory(strm);
+            Directory.CreateDirectory(Path.Combine(_data, "rr", "Binaries"));
+            foreach (string stock in new[] { "99_N.brstm", "98_N.brstm", "97_N.brstm" })
+                File.WriteAllText(Path.Combine(strm, stock), "the game's own");
+
+            // Nothing of yours is in there yet.
+            var importing = form.ImportPackAsync(strm, replaceAssigned: true);
+            Pump(() => importing.IsCompleted);
+            Assert.Contains("nothing of yours", form.StatusTextForTest);
+            Assert.DoesNotContain("99_N", form.SongPickForTest.Items.Cast<object>().Select(item => item.ToString()));
+
+            var add = form.AddToPatchesAsync();
+            Pump(() => add.IsCompleted);
+            importing = form.ImportPackAsync(strm, replaceAssigned: true);
+            Pump(() => importing.IsCompleted);
+            var items = form.SongPickForTest.Items.Cast<object>().Select(item => item.ToString()).ToList();
+            Assert.DoesNotContain("99_N", items);
+            Assert.DoesNotContain("97_N", items);
+            form.Close();
+        }
+    });
+
+    [Fact]
+    public void RemoveFromGame_ShowsOnceAdded_AndPutsRetroRewindsOwnSongBack() => OnUiThread(() =>
+    {
+        var (form, file) = WindowWithSong();
+        using (form)
+        {
+            string strm = Path.Combine(_data, "rr", "strm");
+            Directory.CreateDirectory(strm);
+            File.WriteAllText(Path.Combine(strm, file), "retro rewind's own");
+            Assert.False(form.RemoveFromGameVisibleForTest);
+
+            var add = form.AddToPatchesAsync();
+            Pump(() => add.IsCompleted);
+            Assert.True(form.RemoveFromGameVisibleForTest);
+            Assert.NotEqual("retro rewind's own", File.ReadAllText(Path.Combine(strm, file)));
+            form.ConfirmRemoveForTest = true;
+            form.ClickRemoveFromGameForTest();
+
+            Assert.Equal("retro rewind's own", File.ReadAllText(Path.Combine(strm, file)));
+            Assert.False(form.RemoveFromGameVisibleForTest);
+            form.Close();
+        }
+    });
+
+    [Fact]
+    public void HearFinalLap_PlaysTheSpedUpSong_AndTurnsIntoPause() => OnUiThread(() =>
+    {
+        string song = WriteSong(3);
+        using var form = OpenWindow();
+        form.HandleDrop([song], 0);
+        form.SelectVisible(0);
+        Application.DoEvents();
+        Assert.Contains("final lap", form.HearFinalTextForTest);
+
+        var hearing = form.HearFinalAsync();
+        Pump(() => hearing.IsCompleted);
+        Assert.Equal(PreviewState.Playing, AudioPreview.State);
+        Assert.Contains("Pause", form.HearFinalTextForTest);
+        AudioPreview.Stop();
+        Assert.Contains("final lap", form.HearFinalTextForTest);
+        form.Close();
+    });
+
+    [Fact]
+    public void AddToStrm_PutsSongInStrmAndMod() => OnUiThread(() =>
     {
         var (form, file) = WindowWithSong();
         using (form)
@@ -480,8 +663,9 @@ public class WindowTests : IDisposable
             Pump(() => add.IsCompleted);
 
             Assert.True(add.IsCompletedSuccessfully, add.Exception?.ToString());
-            Assert.Equal("Add to Patches", form.ActionButtonTextForTest);
-            Assert.True(File.Exists(Path.Combine(_data, "rr", "Patches", file)));
+            Assert.DoesNotContain("Add to strm", form.FooterButtonsForTest);
+            Assert.True(File.Exists(Path.Combine(_data, "rr", "strm", file)));
+            Assert.False(File.Exists(Path.Combine(_data, "rr", "Patches", file)));
             Assert.True(File.Exists(Path.Combine(_data, "ww", "Mods", "My Music Pack", file)));
             Assert.True(File.Exists(Path.Combine(_data, "ww", "Mods", "My Music Pack", "My Music Pack.ini")));
             Assert.False(form.ShowPackButtonVisibleForTest);
@@ -517,31 +701,15 @@ public class WindowTests : IDisposable
         }
     });
 
-    [Fact]
-    public void AddToWheelWizard_AddsTheMod_WithoutCopyingToPatches() => OnUiThread(() =>
-    {
-        var (form, file) = WindowWithSong();
-        using (form)
-        {
-            var add = form.AddToWheelWizardAsync();
-            Pump(() => add.IsCompleted);
-
-            Assert.True(add.IsCompletedSuccessfully, add.Exception?.ToString());
-            Assert.True(File.Exists(Path.Combine(_data, "ww", "Mods", "My Music Pack", file)));
-            Assert.False(File.Exists(Path.Combine(_data, "rr", "Patches", file)));
-            form.Close();
-        }
-    });
-
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public void ExportWindow_WheelWizardOption_FollowsWhetherItsInstalled(bool found) => OnUiThread(() =>
+    public void ExportWindow_AddToGame_FollowsWhetherTheFolderIsSet(bool found) => OnUiThread(() =>
     {
         using var form = new ExportForm(found) { StartPosition = FormStartPosition.Manual, Location = new Point(-5000, -5000) };
         form.Show();
         Application.DoEvents();
-        Assert.Equal(found, form.WheelWizardEnabledForTest);
+        Assert.Equal(found, form.GameEnabledForTest);
         Assert.Equal(ExportChoice.None, form.Choice);
         form.Close();
     });
@@ -580,7 +748,9 @@ public class WindowTests : IDisposable
             Assert.Equal("My Song", row.Song);
             Assert.Equal("Me, Myself", row.Credits);
             Assert.Equal(LoopMode.Auto, row.Loop);
-            Assert.Contains(file.Replace(".brstm", ""), form.SongPickForTest.Items.Cast<object>().Select(item => item.ToString()!));
+            // It's already on its track, so the dropdown only shows it for that track. The Songs tab still has it.
+            Assert.Equal($"My Song  ({file.Replace(".brstm", "")})", form.SongPickForTest.Text);
+            Assert.Contains(row.Source, form.SongsForTest.AllSongsForTest, StringComparer.OrdinalIgnoreCase);
 
             var rebuilt = PackBuilder.Build(new Options { PackName = "Again" }, [row], Path.Combine(_data, "again"), _ => { });
             Assert.Equal(0, rebuilt.Failed);
@@ -599,7 +769,7 @@ public class WindowTests : IDisposable
         {
             var add = form.AddToPatchesAsync();
             Pump(() => add.IsCompleted);
-            string patches = Path.Combine(_data, "rr", "Patches");
+            string patches = Path.Combine(_data, "rr", "strm");
             var row = form.Rows.First(r => r.IsAssigned);
 
             var importing = form.ImportPackAsync(patches, replaceAssigned: true);
@@ -656,6 +826,53 @@ public class WindowTests : IDisposable
         Pump(() => importing.IsCompleted);
         return Path.Combine(_data, "packs", "Imported packs", "shared pack");
     }
+
+    [Fact]
+    public void DeletePackAsync_DeletesOffTheWindowThread_ThenClearsTheTracks() => OnUiThread(() =>
+    {
+        var (form, file) = WindowWithSong();
+        using (form)
+        {
+            string imported = ImportedPackWithASong(form, file);
+            var row = form.Rows.First(r => r.IsAssigned);
+            int uiThread = Environment.CurrentManagedThreadId;
+            int deletedOn = uiThread;
+            form.RemoveFolder = folder =>
+            {
+                deletedOn = Environment.CurrentManagedThreadId;
+                Directory.Delete(folder, true);
+            };
+
+            var deleting = form.DeletePackAsync(new InstalledPack("Imported: shared pack", imported, 1, true));
+            Pump(() => deleting.IsCompleted);
+
+            Assert.True(deleting.Result);
+            Assert.NotEqual(uiThread, deletedOn);
+            Assert.False(Directory.Exists(imported));
+            Assert.False(row.IsAssigned);
+            form.Close();
+        }
+    });
+
+    [Fact]
+    public void DeleteOnlyWindow_HasNoImport_AndStillDeletes() => OnUiThread(() =>
+    {
+        var packs = new List<InstalledPack> { new("Imported: Big", "C:\b", 372, true) };
+        var asked = new List<string>();
+        using var form = new ImportPackForm(packs, pack =>
+        {
+            asked.Add(pack.Name);
+            return Task.FromResult(true);
+        }, deleteOnly: true) { StartPosition = FormStartPosition.Manual, Location = new Point(-5000, -5000) };
+        form.Show();
+        Application.DoEvents();
+        Assert.False(form.ImportVisibleForTest);
+        Assert.True(form.DeleteVisibleForTest);
+        form.DeleteForTest();
+        Assert.Equal(["Imported: Big"], asked);
+        Assert.Equal(0, form.PackCountForTest);
+        form.Close();
+    });
 
     [Fact]
     public void DeletePack_ClearsTracksListAndTimeline_AndKeepsYourOtherSongs() => OnUiThread(() =>
@@ -729,6 +946,10 @@ public class WindowTests : IDisposable
             var add = form.AddToPatchesAsync();
             Pump(() => add.IsCompleted);
             string patches = Path.Combine(_data, "rr", "Patches");
+            Directory.CreateDirectory(patches);
+
+            // Wheel Wizard puts a mod's songs in Patches when the game starts.
+            File.Copy(Path.Combine(_data, "rr", "strm", file), Path.Combine(patches, file), true);
             File.WriteAllText(Path.Combine(patches, "la_bike-fk.szs"), "kart");
             form.EditorForTest.RemoveFile = File.Delete;
             form.RemoveFolder = _ => throw new InvalidOperationException("Patches must never go");
@@ -1642,6 +1863,298 @@ public class WindowTests : IDisposable
     });
 
     [Fact]
+    public void SongsPage_ManySongs_SelectAllAndTakeOffTracks_StaysQuick() => OnUiThread(() =>
+    {
+        AppStorage.SaveSettings(new AppSettings { OutputFolder = Path.Combine(_data, "packs") });
+        using var form = OpenWindow();
+
+        // A big pack: hundreds of small songs, each on its own track.
+        string folder = Path.Combine(_data, "big");
+        Directory.CreateDirectory(folder);
+        string template = WriteSong(1);
+        var files = Enumerable.Range(0, 300).Select(i =>
+        {
+            string path = Path.Combine(folder, $"song{i}.wav");
+            File.Copy(template, path);
+            return path;
+        }).ToArray();
+        form.SongsForTest.ImportSongs(files);
+        for (int i = 0; i < files.Length; i++)
+            form.Rows[i].Source = files[i];
+        form.ShowSongs();
+        Application.DoEvents();
+
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        form.SongsForTest.SelectAll();
+        long select = clock.ElapsedMilliseconds;
+        clock.Restart();
+        form.SongsForTest.TakeOffTracks();
+        long takeOff = clock.ElapsedMilliseconds;
+
+        Assert.Equal(300, form.SongsForTest.SelectedSongs.Count);
+        Assert.All(form.Rows.Take(300), row => Assert.False(row.IsAssigned));
+        Assert.True(select < 2000, $"selecting all took {select} ms");
+        Assert.True(takeOff < 3000, $"taking them off took {takeOff} ms");
+        form.Close();
+    });
+
+    [Fact]
+    public void DeleteSongsAsync_DeletesOffTheWindowThread() => OnUiThread(() =>
+    {
+        var (form, editor, songs, download) = SongsPageWithASong();
+        using (form)
+        {
+            int uiThread = Environment.CurrentManagedThreadId;
+            int deletedOn = uiThread;
+            editor.RemoveFile = path =>
+            {
+                deletedOn = Environment.CurrentManagedThreadId;
+                File.Delete(path);
+            };
+            var deleting = editor.DeleteSongsAsync([download], deleteAllFiles: false);
+            Pump(() => deleting.IsCompleted);
+            Assert.Equal(1, deleting.Result);
+            Assert.NotEqual(uiThread, deletedOn);
+            Assert.False(File.Exists(download));
+            form.Close();
+        }
+    });
+
+    [Fact]
+    public void SongsPage_SelectAll_ThenDelete_RemovesManySongsAtOnce() => OnUiThread(() =>
+    {
+        var (form, editor, songs, download) = SongsPageWithASong();
+        using (form)
+        {
+            string other = WriteSong(2);
+            songs.ImportSongs([other]);
+            songs.SelectAll();
+            Assert.True(songs.SelectedSongs.Count >= 2);
+            Assert.Equal($"Delete {songs.SelectedSongs.Count} songs", songs.DeleteTextForTest);
+
+            var picked = songs.SelectedSongs;
+            int gone = editor.DeleteSongs(picked, deleteAllFiles: false);
+
+            Assert.Equal(picked.Count, gone);
+            Assert.False(File.Exists(download));
+            Assert.True(File.Exists(other), "a file from elsewhere stays unless asked");
+            Assert.Empty(songs.VisibleForTest);
+            form.Close();
+        }
+    });
+
+    [Fact]
+    public void ImportingASecondPack_CanOpenItOnItsOwn_KeepingTheFirstAsItWas() => OnUiThread(() =>
+    {
+        var (form, file) = WindowWithSong();
+        using (form)
+        {
+            string source = form.Rows.First(r => r.IsAssigned).Source;
+            string packA = Path.Combine(_data, "pack a");
+            Directory.CreateDirectory(packA);
+            File.Copy(source, Path.Combine(packA, file));
+            form.ImportChoiceForTest = DialogResult.Yes;
+            var first = form.ImportPackAsync(packA);
+            Pump(() => first.IsCompleted);
+            form.ImportChoiceForTest = null;
+
+            // WindowWithSong already had a song, so "pack a" opened on its own and the first pack waits.
+            Assert.Equal(["pack a", "My Music Pack", "+ New pack"], form.PackChoicesForTest.ToArray());
+            var row = form.Rows.First(r => r.IsAssigned);
+            Assert.Contains(Path.Combine("Imported packs", "pack a"), row.Source);
+
+            // Switching back brings the first pack's tracks and songs back, and pack a waits.
+            form.PickPackForTest("My Music Pack");
+            Application.DoEvents();
+            Assert.Equal(["My Music Pack", "pack a", "+ New pack"], form.PackChoicesForTest.ToArray());
+            var mine = form.Rows.First(r => r.IsAssigned);
+            Assert.DoesNotContain("Imported packs", mine.Source);
+
+            form.PickPackForTest("pack a");
+            Application.DoEvents();
+            Assert.Contains(Path.Combine("Imported packs", "pack a"), form.Rows.First(r => r.IsAssigned).Source);
+            form.Close();
+        }
+    });
+
+    [Fact]
+    public void ImportingASecondPack_ChoosingNo_PutsItsSongsOnTheCurrentTracks() => OnUiThread(() =>
+    {
+        var (form, file) = WindowWithSong();
+        using (form)
+        {
+            string packA = Path.Combine(_data, "pack a");
+            Directory.CreateDirectory(packA);
+            // A song for a different track, so the question about tracks that already have songs doesn't come up too.
+            File.Copy(form.Rows.First(r => r.IsAssigned).Source, Path.Combine(packA, form.Rows.First(r => !r.IsAssigned).FileBase + ".brstm"));
+            form.ImportChoiceForTest = DialogResult.No;
+            var importing = form.ImportPackAsync(packA, null);
+            Pump(() => importing.IsCompleted);
+            Assert.DoesNotContain("pack a", form.PackChoicesForTest);
+            form.Close();
+        }
+    });
+
+    [Fact]
+    public void Save_WritesThePackNow_AndSaysItIsKept() => OnUiThread(() =>
+    {
+        var (form, _) = WindowWithSong();
+        using (form)
+        {
+            string path = AppStorage.AutosavePath;
+            if (File.Exists(path))
+                File.Delete(path);
+            Assert.True(form.HandleShortcut(Keys.Control | Keys.S));
+            Assert.True(File.Exists(path));
+            Assert.Contains("kept", form.StatusTextForTest);
+            Assert.Contains(Project.Load(path).Rows, row => row.Source.Length > 0);
+            form.Close();
+        }
+    });
+
+    [Fact]
+    public void DeletePack_RemovesTheOpenPack_AndOpensTheNextOne() => OnUiThread(() =>
+    {
+        var (form, _) = WindowWithSong();
+        using (form)
+        {
+            form.PickPackForTest("+ New pack");
+            Application.DoEvents();
+            string second = form.PackChoicesForTest.First();
+            Assert.Equal(["My Music Pack"], form.PackChoicesForTest.Where(name => name != second && name != "+ New pack").ToArray());
+
+            // Deleting the open (empty) pack opens the one that was set aside, with its song still on its track.
+            form.ConfirmDeleteOpenPackForTest = false;
+            form.DeleteOpenPack();
+            Assert.Equal(second, form.PackChoicesForTest.First());
+            form.ConfirmDeleteOpenPackForTest = true;
+            form.DeleteOpenPack();
+            Assert.DoesNotContain(second, form.PackChoicesForTest);
+            Assert.Contains(form.Rows, row => row.IsAssigned);
+            Assert.Equal("My Music Pack", form.PackChoicesForTest.First());
+
+            // Deleting the last pack leaves a fresh empty one.
+            form.DeleteOpenPack();
+            Assert.DoesNotContain(form.Rows, row => row.IsAssigned);
+            Assert.Equal(["My Music Pack", "+ New pack"], form.PackChoicesForTest.ToArray());
+            form.Close();
+        }
+    });
+
+    [Fact]
+    public void SwitchingToAPackWithTheSameNameAsTheOpenOne_LosesNeither() => OnUiThread(() =>
+    {
+        var (form, _) = WindowWithSong();
+        using (form)
+        {
+            // Two packs that both ended up called "My Music Pack": one open with a song, one put aside.
+            form.PickPackForTest("+ New pack");
+            Application.DoEvents();
+            form.RenameOpenPackForTest("My Music Pack");
+            var empty = form.Rows.First(r => !r.IsAssigned);
+            empty.Source = form.Rows.First(r => !r.IsAssigned).Source;
+            form.Rows[1].Source = Directory.GetFiles(_data, "*.wav").First();
+            form.Rows[1].Song = "Second pack song";
+            form.PickPackForTest(form.PackChoicesForTest.First(name => name != form.PackChoicesForTest.First() && name != "+ New pack"));
+            Application.DoEvents();
+
+            // Both packs are still there, under different names, and each kept its own song.
+            var choices = form.PackChoicesForTest.Where(name => name != "+ New pack").ToList();
+            Assert.Equal(2, choices.Count);
+            Assert.Equal(choices.Count, choices.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+            form.Close();
+        }
+    });
+
+    [Fact]
+    public void RenamingAPack_ToANameAnotherHas_GetsANumber() => OnUiThread(() =>
+    {
+        var (form, _) = WindowWithSong();
+        using (form)
+        {
+            form.PickPackForTest("+ New pack");
+            Application.DoEvents();
+            string other = form.PackChoicesForTest.Skip(1).First(name => name != "+ New pack");
+            form.RenameOpenPackForTest(other);
+            Assert.Equal($"{other} 2", form.PackChoicesForTest.First());
+            form.RenameOpenPackForTest("Brand new name");
+            Assert.Equal("Brand new name", form.PackChoicesForTest.First());
+            form.Close();
+        }
+    });
+
+    [Fact]
+    public void NewPack_StartsEmpty_AndTheOldOneIsKept() => OnUiThread(() =>
+    {
+        var (form, _) = WindowWithSong();
+        using (form)
+        {
+            form.PickPackForTest("+ New pack");
+            Application.DoEvents();
+            Assert.DoesNotContain(form.Rows, r => r.IsAssigned);
+            Assert.Contains("My Music Pack", form.PackChoicesForTest);
+            form.PickPackForTest("My Music Pack");
+            Application.DoEvents();
+            Assert.Contains(form.Rows, r => r.IsAssigned);
+            form.Close();
+        }
+    });
+
+    [Fact]
+    public void SongPick_ShowsTheImportedPackSong_OfTheTrackYouAreLookingAt() => OnUiThread(() =>
+    {
+        var (form, file) = WindowWithSong();
+        using (form)
+        {
+            string imported = ImportedPackWithASong(form, file);
+            var row = form.Rows.First(r => r.IsAssigned);
+            form.SelectVisible(form.VisibleIndexForTest(row));
+            Application.DoEvents();
+            string name = Path.GetFileNameWithoutExtension(row.Source);
+
+            // Its own song is shown as the pick, even though other pack songs stay out of the list.
+            Assert.Equal(name, form.SongPickForTest.Text);
+            Assert.Contains(name, form.SongPickForTest.Items.Cast<object>().Select(item => item.ToString()));
+
+            // With a title on the track, the dropdown shows the title and keeps the file name after it.
+            row.Song = "A Real Title";
+            form.SelectCategory("All tracks");
+            form.SelectVisible(form.VisibleIndexForTest(form.Rows.First(r => !r.IsAssigned)));
+            Application.DoEvents();
+            form.SelectVisible(form.VisibleIndexForTest(row));
+            Application.DoEvents();
+            Assert.Equal($"A Real Title  ({name})", form.SongPickForTest.Text);
+
+            form.SelectCategory("All tracks");
+            form.SelectVisible(form.VisibleIndexForTest(form.Rows.First(r => !r.IsAssigned)));
+            Application.DoEvents();
+            Assert.DoesNotContain(name, form.SongPickForTest.Items.Cast<object>().Select(item => item.ToString()));
+            form.Close();
+        }
+    });
+
+    [Fact]
+    public void SongPick_LeavesOutSongsFromImportedPacks_ButTheSongsTabKeepsThem() => OnUiThread(() =>
+    {
+        AppStorage.SaveSettings(new AppSettings { OutputFolder = Path.Combine(_data, "packs") });
+        string mine = WriteSong(2);
+        using var form = OpenWindow();
+        string packSong = WriteSong(2);
+        string copies = Path.Combine(_data, "packs", "Imported packs", "Shared");
+        Directory.CreateDirectory(copies);
+        string copy = Path.Combine(copies, "99_N.wav");
+        File.Copy(packSong, copy);
+        form.HandleDrop([mine], 0);
+        form.ImportFiles([copy]);
+
+        var picks = form.SongPickForTest.Items.Cast<object>().Select(item => item.ToString()).ToList();
+        Assert.DoesNotContain("99_N", picks);
+        form.ShowSongs();
+        Assert.Contains(Path.GetFullPath(copy), form.SongsForTest.VisibleForTest, StringComparer.OrdinalIgnoreCase);
+        form.Close();
+    });
+
+    [Fact]
     public void SongsPage_DeleteButton_SaysWhatWillHappen() => OnUiThread(() =>
     {
         var (form, editor, songs, download) = SongsPageWithASong();
@@ -1652,7 +2165,7 @@ public class WindowTests : IDisposable
             string imported = WriteSong(2);
             songs.ImportSongs([imported]);
             songs.SelectForTest(imported);
-            Assert.Equal("Remove from list", songs.DeleteTextForTest);
+            Assert.Equal("Delete song", songs.DeleteTextForTest);
 
             Assert.True(editor.DeleteSong(imported));
             Assert.DoesNotContain(imported, songs.VisibleForTest);

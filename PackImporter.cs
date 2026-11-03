@@ -375,7 +375,8 @@ public sealed class ImportPackForm : Form
     private readonly ModernButton _zip = new() { Text = "Choose zip", AutoSize = true, Height = 28, Margin = new Padding(0, 0, 6, 0) };
     private readonly ModernButton _files = new() { Text = "Choose files", AutoSize = true, Height = 28, Margin = new Padding(0) };
     private readonly ModernButton _delete = new() { Text = "Delete", AutoSize = true, Height = 28, Margin = new Padding(0, 0, 6, 0) };
-    private readonly Func<InstalledPack, bool>? _deletePack;
+    private readonly Func<InstalledPack, Task<bool>>? _deletePack;
+    private readonly bool _deleteOnly;
     private readonly Label _currentTitle;
     private readonly ModernButton _cancel = new() { Text = "Cancel", AutoSize = true, Height = 28 };
     private readonly List<InstalledPack> _packs;
@@ -387,10 +388,17 @@ public sealed class ImportPackForm : Form
     public string[]? ChosenFiles { get; private set; }
 
     public ImportPackForm(List<InstalledPack> packs, Func<InstalledPack, bool>? deletePack = null)
+        : this(packs, deletePack == null ? null : pack => Task.FromResult(deletePack(pack)))
+    {
+    }
+
+    /// <summary>With deleteOnly, the window is for deleting packs and has no way to import one.</summary>
+    public ImportPackForm(List<InstalledPack> packs, Func<InstalledPack, Task<bool>>? deletePack, bool deleteOnly = false)
     {
         _packs = packs;
         _deletePack = deletePack;
-        Text = "Import a music pack";
+        _deleteOnly = deleteOnly;
+        Text = deleteOnly ? "Delete a music pack" : "Import a music pack";
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
@@ -400,8 +408,12 @@ public sealed class ImportPackForm : Form
         Font = Theme.UiFont();
 
         var page = new TableLayoutPanel { AutoSize = true, ColumnCount = 1, Padding = new Padding(22, 20, 22, 18) };
-        page.Controls.Add(new Label { Text = "Which pack do you want to bring in?", AutoSize = true, Font = Theme.TitleFont(14f), Margin = new Padding(0, 0, 0, 4) });
-        page.Controls.Add(new Label { Text = "Its songs go back on their tracks, ready to change and rebuild.", AutoSize = true, Tag = Theme.MutedTag, Margin = new Padding(0, 0, 0, 14) });
+        page.Controls.Add(new Label { Text = deleteOnly ? "Which pack do you want to delete?" : "Which pack do you want to bring in?", AutoSize = true, Font = Theme.TitleFont(14f), Margin = new Padding(0, 0, 0, 4) });
+        page.Controls.Add(new Label
+        {
+            Text = deleteOnly ? "Its songs go to the Recycle Bin. Karts and other files in it stay." : "Its songs go back on their tracks, ready to change and rebuild.",
+            AutoSize = true, Tag = Theme.MutedTag, Margin = new Padding(0, 0, 0, 14),
+        });
 
         var currentCard = new CardPanel { Width = 600, Height = 236, Padding = new Padding(10), Margin = new Padding(0, 0, 0, 10) };
         _currentTitle = new Label { Text = packs.Count > 0 ? "On this PC" : "No packs found on this PC", AutoSize = true, Dock = DockStyle.Top, Font = Theme.TitleFont(10f), Padding = new Padding(6, 2, 0, 8) };
@@ -429,7 +441,8 @@ public sealed class ImportPackForm : Form
         buttons.Controls.AddRange([_folder, _zip, _files]);
         grid.Controls.Add(buttons, 1, 0);
         otherCard.Controls.Add(grid);
-        page.Controls.Add(otherCard);
+        if (!deleteOnly)
+            page.Controls.Add(otherCard);
 
         var footer = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, Margin = new Padding(0, 6, 0, 0) };
         footer.Controls.Add(_cancel);
@@ -438,7 +451,7 @@ public sealed class ImportPackForm : Form
 
         _installed.SelectedIndexChanged += (_, _) => ShowButtons();
         ShowButtons();
-        _delete.Click += (_, _) => DeleteSelected();
+        _delete.Click += async (_, _) => await DeleteSelected();
         _files.Click += (_, _) =>
         {
             using var dialog = new OpenFileDialog
@@ -478,15 +491,38 @@ public sealed class ImportPackForm : Form
         int index = _installed.SelectedIndex;
         bool any = index >= 0 && index < _packs.Count;
         _import.Enabled = any;
+        _import.Visible = !_deleteOnly;
 
         _delete.Visible = any && _deletePack != null;
     }
 
-    private void DeleteSelected()
+    private async Task DeleteSelected()
     {
         int index = _installed.SelectedIndex;
-        if (_deletePack == null || index < 0 || index >= _packs.Count || !_deletePack(_packs[index]))
+        if (_deletePack == null || index < 0 || index >= _packs.Count)
             return;
+
+        // Deleting a big pack takes a while, so the window shows it's working and can't be used twice.
+        var title = _currentTitle.Text;
+        _currentTitle.Text = "Deleting... this can take a while for a big pack.";
+        foreach (var control in new Control[] { _delete, _import, _installed, _folder, _zip, _files, _cancel })
+            control.Enabled = false;
+        bool deleted;
+        try
+        {
+            deleted = await _deletePack(_packs[index]);
+        }
+        finally
+        {
+            foreach (var control in new Control[] { _delete, _installed, _folder, _zip, _files, _cancel })
+                control.Enabled = true;
+            _currentTitle.Text = title;
+        }
+        if (!deleted)
+        {
+            ShowButtons();
+            return;
+        }
         _packs.RemoveAt(index);
         _installed.Items.RemoveAt(index);
         _installed.SelectedIndex = _packs.Count > 0 ? Math.Min(index, _packs.Count - 1) : -1;
@@ -500,7 +536,8 @@ public sealed class ImportPackForm : Form
     internal bool ImportEnabledForTest => _import.Enabled;
     internal int PackCountForTest => _installed.Items.Count;
     internal void SelectPackForTest(int index) => _installed.SelectedIndex = index;
-    internal void DeleteForTest() => DeleteSelected();
+    internal void DeleteForTest() => DeleteSelected().GetAwaiter().GetResult();
+    internal bool ImportVisibleForTest => _import.Visible;
 
     private void FinishWithSelected()
     {

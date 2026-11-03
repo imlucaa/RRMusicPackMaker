@@ -158,13 +158,24 @@ public class MusicSearchTests
     }
 
     [Fact]
-    public void PreviewArguments_OnlyAskForTheAddress_AndTheLinkCantBeAnOption()
+    public void DownloadArguments_BestQualityByDefault_AndACapWhenAsked()
     {
-        var args = Downloader.PreviewArguments("--exec calc");
-        Assert.Contains("--get-url", args);
-        Assert.Equal("--", args[^2]);
-        Assert.Equal("--exec calc", args[^1]);
-        Assert.DoesNotContain("-x", args);
+        var best = Downloader.DownloadArguments("https://youtu.be/abc", @"C:\songs", @"C:\ffmpeg");
+        Assert.Equal("bestaudio/best", best[best.IndexOf("-f") + 1]);
+
+        var capped = Downloader.DownloadArguments("https://youtu.be/abc", @"C:\songs", @"C:\ffmpeg", null, 128);
+        Assert.Equal("bestaudio[abr<=128]/bestaudio/best", capped[capped.IndexOf("-f") + 1]);
+        Assert.Equal("--", capped[^2]);
+        Assert.Equal("https://youtu.be/abc", capped[^1]);
+    }
+
+    [Fact]
+    public void QualityChoices_StartWithBest_AndGoDown()
+    {
+        Assert.Equal(("Best", 0), Downloader.QualityChoices[0]);
+        Assert.Equal(Downloader.QualityChoices.Skip(1).Select(choice => choice.Kbps).OrderByDescending(kbps => kbps), Downloader.QualityChoices.Skip(1).Select(choice => choice.Kbps));
+        Assert.Equal(2, Downloader.QualityIndex(192));
+        Assert.Equal(0, Downloader.QualityIndex(999));
     }
 
     // The same shape YouTube Music returned in a real search, cut down.
@@ -570,6 +581,32 @@ public class DownloadWindowTests
         Assert.True(go.IsCompleted);
         Assert.Contains("copy-protects", form.StatusForTest);
         Assert.Null(form.Result);
+        form.Close();
+    });
+
+    [Fact]
+    public void ExportWindow_MadeFor_WiiByDefault_AndDolphinWhenChosen() => OnUiThread(() =>
+    {
+        using var form = new ExportForm(true) { StartPosition = FormStartPosition.Manual, Location = new Point(-5000, -5000) };
+        form.Show();
+        Application.DoEvents();
+        Assert.True(form.ForWii);
+        form.ChooseTargetForTest(false);
+        Assert.False(form.ForWii);
+        form.Close();
+        using var remembered = new ExportForm(true, forWii: false) { StartPosition = FormStartPosition.Manual, Location = new Point(-5000, -5000) };
+        Assert.False(remembered.ForWii);
+    });
+
+    [Fact]
+    public void DownloadWindow_HasNoPreview_ButAQualityChoice() => OnUiThread(() =>
+    {
+        using var form = Open();
+        form.Show();
+        Application.DoEvents();
+        Assert.False(form.HasPreviewForTest);
+        Assert.Equal(Downloader.QualityChoices.Length, form.QualityForTest.Items.Count);
+        Assert.Equal("Best", form.QualityForTest.Items[0]);
         form.Close();
     });
 

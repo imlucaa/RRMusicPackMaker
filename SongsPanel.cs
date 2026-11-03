@@ -5,7 +5,12 @@ public sealed record SongsPanelActions(
     Func<string, int> TracksUsing,
     Func<string, int> RemoveFromTracks,
     Action<string> ConfirmDelete,
-    Action<string> OpenInEditor);
+    Action<string> OpenInEditor,
+    Action<IReadOnlyList<string>> ConfirmDeleteMany,
+    Action DeletePacks,
+    Func<IReadOnlyCollection<string>, int> TracksUsingAny,
+    Func<IReadOnlyCollection<string>, int> RemoveManyFromTracks,
+    Func<Dictionary<string, int>> TrackCounts);
 
 /// <summary>The Songs tab: everything imported, downloaded or edited, and what can be done with each song.</summary>
 public sealed class SongsPanel : Panel
@@ -28,6 +33,7 @@ public sealed class SongsPanel : Panel
     private readonly ModernButton _edit = Action("Open in Editor");
     private readonly ModernButton _removeFromTracks = Action("Take off tracks");
     private readonly ModernButton _delete = Action("Delete song");
+    private readonly ModernButton _selectAll = Action("Select all songs");
     private readonly Dictionary<string, double> _lengths = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, ModernButton> _kindChips = [];
     private List<string> _visible = [];
@@ -59,14 +65,20 @@ public sealed class SongsPanel : Panel
     {
         var import = new ModernButton { Text = "Import songs", Tag = Theme.AccentTag, AutoSize = true, Margin = new Padding(8, 0, 0, 0), Dock = DockStyle.Fill };
         var find = new ModernButton { Text = "Find a song online", AutoSize = true, Margin = new Padding(8, 0, 0, 0), Dock = DockStyle.Fill };
-        var top = new TableLayoutPanel { Dock = DockStyle.Top, Height = 46, ColumnCount = 3, Padding = new Padding(4, 4, 4, 6) };
+        var top = new TableLayoutPanel { Dock = DockStyle.Top, Height = 46, ColumnCount = 4, Padding = new Padding(4, 4, 4, 6) };
         top.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        top.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         top.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         top.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         _search.Margin = new Padding(0);
         top.Controls.Add(_search, 0, 0);
         top.Controls.Add(import, 1, 0);
         top.Controls.Add(find, 2, 0);
+
+        // Deleting a whole pack is up here with the other things you do to the list, not tucked in the side.
+        var deletePack = new ModernButton { Text = "Delete a pack", AutoSize = true, Margin = new Padding(8, 0, 0, 0), Dock = DockStyle.Fill };
+        deletePack.Click += (_, _) => _actions.DeletePacks();
+        top.Controls.Add(deletePack, 3, 0);
 
         foreach (string kind in new[] { AllKinds, nameof(SongKind.Downloaded), nameof(SongKind.Imported), nameof(SongKind.Edited) })
         {
@@ -95,7 +107,7 @@ public sealed class SongsPanel : Panel
         _stop.Margin = new Padding(4, 0, 0, 8);
         transport.Controls.Add(_play, 0, 0);
         transport.Controls.Add(_stop, 1, 0);
-        actions.Controls.AddRange([_title, _details, transport, _edit, _removeFromTracks, _delete]);
+        actions.Controls.AddRange([_title, _details, transport, _edit, _removeFromTracks, _delete, _selectAll]);
         var detailsCard = new CardPanel { Dock = DockStyle.Fill };
         detailsCard.Controls.Add(actions);
         var detailsHolder = new Panel { Dock = DockStyle.Right, Width = 384, Padding = new Padding(10, 0, 0, 0) };
@@ -121,11 +133,32 @@ public sealed class SongsPanel : Panel
                 _actions.OpenInEditor(song);
         };
         _removeFromTracks.Click += (_, _) => TakeOffTracks();
-        _delete.Click += (_, _) =>
-        {
-            if (Selected is { } song)
-                _actions.ConfirmDelete(song);
-        };
+        _delete.Click += (_, _) => DeleteSelected();
+        _selectAll.Click += (_, _) => SelectAll();
+    }
+
+    /// <summary>Every selected song. Hold Ctrl or Shift to pick several, or use Select all songs.</summary>
+    internal List<string> SelectedSongs => _list.SelectedIndices.Cast<int>().Where(i => i < _visible.Count).Select(i => _visible[i]).ToList();
+
+    internal void SelectAll()
+    {
+        // Picking every song fires a change for each one, so the details are worked out once at the end.
+        _refreshing = true;
+        _list.BeginUpdate();
+        for (int i = 0; i < _list.Items.Count; i++)
+            _list.SetSelected(i, true);
+        _list.EndUpdate();
+        _refreshing = false;
+        ShowDetails();
+    }
+
+    internal void DeleteSelected()
+    {
+        var songs = SelectedSongs;
+        if (songs.Count > 1)
+            _actions.ConfirmDeleteMany(songs);
+        else if (songs.Count == 1)
+            _actions.ConfirmDelete(songs[0]);
     }
 
     internal string? Selected => _list.SelectedIndex >= 0 && _list.SelectedIndex < _visible.Count ? _visible[_list.SelectedIndex] : null;
@@ -145,6 +178,7 @@ public sealed class SongsPanel : Panel
     internal void RefreshList()
     {
         string? keep = Selected;
+        var keepAll = new HashSet<string>(SelectedSongs, StringComparer.OrdinalIgnoreCase);
         var words = _search.Box.Text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         _visible = _library.Songs
             .Where(song => _kind == AllKinds || _library.KindOf(song).ToString() == _kind)
@@ -152,13 +186,23 @@ public sealed class SongsPanel : Panel
             .ToList();
 
         _refreshing = true;
+        var counts = _actions.TrackCounts();
         _list.BeginUpdate();
         _list.Items.Clear();
-        foreach (string song in _visible)
-            _list.Items.Add(new SongRows.Row(SongLibrary.DisplayName(song), SummaryOf(song)));
+        _list.Items.AddRange(_visible.Select(song => (object)new SongRows.Row(SongLibrary.DisplayName(song), SummaryOf(song, counts))).ToArray());
         _list.EndUpdate();
         int again = keep == null ? -1 : _visible.FindIndex(song => song.Equals(keep, StringComparison.OrdinalIgnoreCase));
-        _list.SelectedIndex = again >= 0 ? again : _visible.Count > 0 ? 0 : -1;
+        if (keepAll.Count > 1)
+        {
+            // Several were picked, so they stay picked: taking them off tracks shouldn't lose the selection.
+            for (int i = 0; i < _visible.Count; i++)
+                if (keepAll.Contains(_visible[i]))
+                    _list.SetSelected(i, true);
+        }
+        else
+        {
+            _list.SelectedIndex = again >= 0 ? again : _visible.Count > 0 ? 0 : -1;
+        }
         _refreshing = false;
 
         _empty.Visible = _visible.Count == 0;
@@ -167,12 +211,12 @@ public sealed class SongsPanel : Panel
         _ = LoadLengthsAsync();
     }
 
-    private string SummaryOf(string song)
+    private string SummaryOf(string song, Dictionary<string, int> counts)
     {
         var parts = new List<string> { _library.KindOf(song).ToString() };
         if (_lengths.TryGetValue(song, out double seconds))
             parts.Add(FormatLength(seconds));
-        int tracks = _actions.TracksUsing(song);
+        int tracks = counts.GetValueOrDefault(Path.GetFullPath(song));
         if (tracks > 0)
             parts.Add($"on {tracks} {(tracks == 1 ? "track" : "tracks")}");
         return string.Join("  ·  ", parts);
@@ -207,13 +251,27 @@ public sealed class SongsPanel : Panel
             return;
         foreach (var (song, seconds) in found)
             _lengths[song] = seconds;
+        var counts = _actions.TrackCounts();
+        _refreshing = true;
+        _list.BeginUpdate();
+        var selected = _list.SelectedIndices.Cast<int>().ToList();
         for (int i = 0; i < _visible.Count && i < _list.Items.Count; i++)
-            _list.Items[i] = new SongRows.Row(SongLibrary.DisplayName(_visible[i]), SummaryOf(_visible[i]));
+            _list.Items[i] = new SongRows.Row(SongLibrary.DisplayName(_visible[i]), SummaryOf(_visible[i], counts));
+        foreach (int i in selected.Where(i => i < _list.Items.Count))
+            _list.SetSelected(i, true);
+        _list.EndUpdate();
+        _refreshing = false;
         ShowDetails();
     }
 
     private void ShowDetails()
     {
+        var picked = SelectedSongs;
+        if (picked.Count > 1)
+        {
+            ShowManySelected(picked);
+            return;
+        }
         string? song = Selected;
         bool any = song != null;
         _title.Text = any ? SongLibrary.DisplayName(song!) : "Pick a song";
@@ -238,7 +296,24 @@ public sealed class SongsPanel : Panel
 
         _edit.Text = kind == SongKind.Edited ? "Keep editing" : "Open in Editor";
         _removeFromTracks.Enabled = tracks > 0;
-        _delete.Text = _library.IsOwned(song!) ? "Delete song" : "Remove from list";
+        _delete.Text = "Delete song";
+        _play.Enabled = true;
+        _edit.Enabled = true;
+        ShowPlayback();
+    }
+
+    /// <summary>With several songs picked, only what works on all of them stays on: taking them off tracks and deleting them.</summary>
+    private void ShowManySelected(List<string> songs)
+    {
+        int tracks = _actions.TracksUsingAny(songs);
+        _title.Text = $"{songs.Count} songs selected";
+        _title.Font = Theme.TitleFont();
+        _details.Text = tracks == 0 ? "None are on tracks" : $"Used on {tracks} {(tracks == 1 ? "track" : "tracks")}";
+        _play.Enabled = false;
+        _edit.Enabled = false;
+        _removeFromTracks.Enabled = tracks > 0;
+        _delete.Enabled = true;
+        _delete.Text = $"Delete {songs.Count} songs";
         ShowPlayback();
     }
 
@@ -315,6 +390,14 @@ public sealed class SongsPanel : Panel
 
     internal void TakeOffTracks()
     {
+        var songs = SelectedSongs;
+        if (songs.Count > 1)
+        {
+            int total = _actions.RemoveManyFromTracks(songs);
+            _status($"Took {songs.Count} songs off {total} {(total == 1 ? "track" : "tracks")}. The songs are still in your list.");
+            RefreshList();
+            return;
+        }
         if (Selected is not { } song)
             return;
         int tracks = _actions.RemoveFromTracks(song);
@@ -332,9 +415,9 @@ public sealed class SongsPanel : Panel
             _ = PlayOrPauseAsync();
             return true;
         }
-        if (key == Keys.Delete && _list.Focused && Selected is { } song)
+        if (key == Keys.Delete && _list.Focused && Selected != null)
         {
-            _actions.ConfirmDelete(song);
+            DeleteSelected();
             return true;
         }
         return false;
@@ -353,7 +436,12 @@ public sealed class SongsPanel : Panel
 
     // For the automated tests.
     internal List<string> VisibleForTest => _visible;
-    internal void SelectForTest(string song) => _list.SelectedIndex = _visible.FindIndex(path => path.Equals(Path.GetFullPath(song), StringComparison.OrdinalIgnoreCase));
+    internal IEnumerable<string> AllSongsForTest => _library.Songs;
+    internal void SelectForTest(string song)
+    {
+        _list.ClearSelected();
+        _list.SelectedIndex = _visible.FindIndex(path => path.Equals(Path.GetFullPath(song), StringComparison.OrdinalIgnoreCase));
+    }
     internal void PickKindForTest(SongKind? kind) => PickKind(kind?.ToString() ?? AllKinds);
     internal void SearchForTest(string text) => _search.Box.Text = text;
     internal string DetailsForTest => _details.Text;
@@ -377,6 +465,7 @@ public sealed class SongRows : ListBox
     public SongRows()
     {
         DrawMode = DrawMode.OwnerDrawFixed;
+        SelectionMode = SelectionMode.MultiExtended;
         BorderStyle = BorderStyle.None;
         ItemHeight = Theme.Px(52);
         IntegralHeight = false;

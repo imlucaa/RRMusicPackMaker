@@ -58,7 +58,15 @@ public sealed class EditorPanel : Panel
     private readonly FieldBox _name = new("Name for the new song") { Width = 240, Margin = new Padding(14, 1, 0, 0) };
     private readonly ComboBox _blend = new FlatCombo { Width = 130, Margin = new Padding(0, 2, 0, 0) };
     private readonly ComboBox _equalLength = new FlatCombo { Width = 170, Margin = new Padding(0, 2, 6, 0) };
-    private readonly ComboBox _speed = new FlatCombo { Width = 230, Margin = new Padding(0, 2, 0, 0), MaxDropDownItems = 14 };
+    private readonly ComboBox _speed = new FlatCombo { Width = 230, Margin = new Padding(0, 2, 22, 0), MaxDropDownItems = 14 };
+    private readonly ComboBox _fadeIn = new FlatCombo { Width = 120, Margin = new Padding(0, 2, 22, 0) };
+    private readonly ComboBox _fadeOut = new FlatCombo { Width = 120, Margin = new Padding(0, 2, 0, 0) };
+
+    /// <summary>How long the song fades in at the start and out at the end, in seconds.</summary>
+    internal static readonly (string Text, double Seconds)[] FadeChoices =
+    [
+        ("None", 0), ("0.5 seconds", 0.5), ("1 second", 1), ("2 seconds", 2), ("3 seconds", 3), ("5 seconds", 5), ("8 seconds", 8),
+    ];
     private readonly ModernButton _makeEqual = Tool("Make parts equal");
     private readonly ModernButton _play = Tool("▶  Play", Theme.AccentTag);
     private readonly ModernButton _pause = Tool("❚❚  Pause");
@@ -135,7 +143,7 @@ public sealed class EditorPanel : Panel
         foreach (var (text, _) in EqualChoices)
             _equalLength.Items.Add(text);
         _equalLength.SelectedIndex = 0;
-        var mergeRow = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, WrapContents = false, Padding = new Padding(12, 4, 12, 0) };
+        var mergeRow = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, WrapContents = true, Padding = new Padding(12, 4, 12, 0) };
         mergeRow.Controls.Add(new Label { Text = "Each part plays", AutoSize = true, Margin = new Padding(0, 8, 8, 0) });
         mergeRow.Controls.Add(_equalLength);
         _makeEqual.Margin = new Padding(0, 0, 22, 0);
@@ -148,6 +156,17 @@ public sealed class EditorPanel : Panel
         _speed.SelectedIndex = 0;
         mergeRow.Controls.Add(new Label { Text = "Speed", AutoSize = true, Margin = new Padding(0, 8, 8, 0) });
         mergeRow.Controls.Add(_speed);
+        foreach (var (text, _) in FadeChoices)
+        {
+            _fadeIn.Items.Add(text);
+            _fadeOut.Items.Add(text);
+        }
+        _fadeIn.SelectedIndex = 0;
+        _fadeOut.SelectedIndex = 0;
+        mergeRow.Controls.Add(new Label { Text = "Fade in", AutoSize = true, Margin = new Padding(0, 8, 8, 0) });
+        mergeRow.Controls.Add(_fadeIn);
+        mergeRow.Controls.Add(new Label { Text = "Fade out", AutoSize = true, Margin = new Padding(0, 8, 8, 0) });
+        mergeRow.Controls.Add(_fadeOut);
         var saveRow = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, WrapContents = false, Padding = new Padding(12, 6, 12, 8) };
         _name.Margin = new Padding(0, 1, 0, 0);
         saveRow.Controls.Add(_name);
@@ -193,6 +212,8 @@ public sealed class EditorPanel : Panel
             SaveState();
             UpdateState();
         };
+        _fadeIn.SelectedIndexChanged += (_, _) => SaveState();
+        _fadeOut.SelectedIndexChanged += (_, _) => SaveState();
         _timeline.PositionChanged += UpdateState;
         _timeline.PartDragged += (from, insertBefore) => MovePart(from, insertBefore);
         _timeline.PartTrimmed += TrimPart;
@@ -239,6 +260,8 @@ public sealed class EditorPanel : Panel
         _name.Box.Text = state.Name;
         _blend.SelectedIndex = Math.Clamp(state.Blend, 0, BlendChoices.Length - 1);
         _speed.SelectedIndex = Math.Clamp(state.Speed, 0, PackBuilder.SpeedChoices.Length - 1);
+        _fadeIn.SelectedIndex = Math.Clamp(state.FadeIn, 0, FadeChoices.Length - 1);
+        _fadeOut.SelectedIndex = Math.Clamp(state.FadeOut, 0, FadeChoices.Length - 1);
 
         var kept = new List<EditClip>();
         foreach (var clip in state.Clips)
@@ -307,28 +330,35 @@ public sealed class EditorPanel : Panel
         string name = SongLibrary.DisplayName(path);
         int parts = _timeline.Clips.Count(clip => SamePath(clip.Source, path));
         int tracks = _tracksUsing(path);
+        bool ours = IsDownloadedSong(path);
         var lines = new List<string>
         {
-            IsDownloadedSong(path)
+            ours
                 ? $"Delete \"{name}\"? It goes to the Recycle Bin."
-                : $"Take \"{name}\" off this list? The file stays where it is.",
+                : $"\"{name}\" is a file you imported, from {Path.GetDirectoryName(path)}.\r\n\r\nYes: delete the file. It goes to the Recycle Bin.\r\nNo: only take it off this list, and leave the file where it is.",
         };
         if (parts > 0)
             lines.Add($"{parts} {(parts == 1 ? "part" : "parts")} on the timeline will be removed. Undo brings them back until you close the app.");
         if (tracks > 0)
             lines.Add($"{tracks} {(tracks == 1 ? "track uses" : "tracks use")} this song and will go back to their old music. Packs you already made aren't affected.");
-        if (MessageBox.Show(this, string.Join("\r\n\r\n", lines), "Delete song", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
+        var answer = MessageBox.Show(this, string.Join("\r\n\r\n", lines), "Delete song", ours ? MessageBoxButtons.YesNo : MessageBoxButtons.YesNoCancel, MessageBoxIcon.Warning);
+        if (answer == DialogResult.Yes)
+            DeleteSong(path, deleteFile: true);
+        else if (answer == DialogResult.No && !ours)
             DeleteSong(path);
     }
 
     private static bool SamePath(string a, string b) =>
         Path.GetFullPath(a).Equals(Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>Removes a song from the list and the timeline, and sends it to the Recycle Bin if it's a download.</summary>
-    internal bool DeleteSong(string path)
+    /// <summary>
+    /// Removes a song from the list and the timeline. A download is sent to the Recycle Bin, and so is any other
+    /// file when deleteFile is set. Otherwise a file from elsewhere stays where it is.
+    /// </summary>
+    internal bool DeleteSong(string path, bool deleteFile = false)
     {
         string name = SongLibrary.DisplayName(path);
-        if (IsDownloadedSong(path))
+        if (IsDownloadedSong(path) || deleteFile)
         {
             try
             {
@@ -354,6 +384,72 @@ public sealed class EditorPanel : Panel
         _songDeleted(path);
         _status($"Deleted {name}.");
         return true;
+    }
+
+    /// <summary>Called once after several songs are deleted together, instead of once per song.</summary>
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal Action<IReadOnlyList<string>>? SongsDeleted { get; set; }
+
+    /// <summary>
+    /// Deletes several songs in one go. Downloads and copies from imported packs go to the Recycle Bin, and so do
+    /// files from elsewhere when deleteAllFiles is set. Otherwise those are only taken off the list.
+    /// Returns how many songs left the list.
+    /// </summary>
+    internal int DeleteSongs(IReadOnlyList<string> paths, bool deleteAllFiles)
+    {
+        var (gone, failures) = RemoveSongFiles(paths, deleteAllFiles ? paths.ToHashSet(StringComparer.OrdinalIgnoreCase) : paths.Where(IsDownloadedSong).ToHashSet(StringComparer.OrdinalIgnoreCase));
+        return FinishDeletingSongs(gone, failures);
+    }
+
+    /// <summary>The same, but sending the files to the Recycle Bin happens off the window, so hundreds of songs don't freeze it.</summary>
+    internal async Task<int> DeleteSongsAsync(IReadOnlyList<string> paths, bool deleteAllFiles)
+    {
+        var filesToDelete = deleteAllFiles ? paths.ToHashSet(StringComparer.OrdinalIgnoreCase) : paths.Where(IsDownloadedSong).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        _status($"Deleting {paths.Count} songs...");
+        var (gone, failures) = await Task.Run(() => RemoveSongFiles(paths, filesToDelete));
+        return IsDisposed ? gone.Count : FinishDeletingSongs(gone, failures);
+    }
+
+    /// <summary>Only touches files. Returns the songs that left, and why any that stayed couldn't go.</summary>
+    private (List<string> Gone, List<string> Failures) RemoveSongFiles(IReadOnlyList<string> paths, HashSet<string> filesToDelete)
+    {
+        var gone = new List<string>();
+        var failures = new List<string>();
+        foreach (string path in paths)
+        {
+            if (filesToDelete.Contains(path))
+            {
+                try
+                {
+                    RemoveFile(path);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OperationCanceledException)
+                {
+                    failures.Add($"Editor: could not delete {path}. {ex.Message}");
+                    continue;
+                }
+            }
+            gone.Add(path);
+        }
+        return (gone, failures);
+    }
+
+    private int FinishDeletingSongs(List<string> gone, List<string> failures)
+    {
+        int failed = failures.Count;
+        foreach (string line in failures)
+            _log(line);
+        _library.Remove(gone);
+        RemovePartsOf(gone);
+        RefreshSongs();
+        if (SongsDeleted != null)
+            SongsDeleted(gone);
+        else
+            foreach (string path in gone)
+                _songDeleted(path);
+        _status(failed == 0 ? $"Deleted {gone.Count} songs." : $"Deleted {gone.Count} songs. {failed} couldn't be deleted. See the log.");
+        return gone.Count;
     }
 
     /// <summary>Takes parts off the timeline when their songs are gone. Undo still brings them back this session.</summary>
@@ -459,7 +555,7 @@ public sealed class EditorPanel : Panel
     private void SaveState()
     {
         if (_restored)
-            new EditorState { Clips = _timeline.Clips, Name = _name.Box.Text, Blend = Math.Max(0, _blend.SelectedIndex), Speed = Math.Max(0, _speed.SelectedIndex) }.Save();
+            new EditorState { Clips = _timeline.Clips, Name = _name.Box.Text, Blend = Math.Max(0, _blend.SelectedIndex), Speed = Math.Max(0, _speed.SelectedIndex), FadeIn = Math.Max(0, _fadeIn.SelectedIndex), FadeOut = Math.Max(0, _fadeOut.SelectedIndex) }.Save();
     }
 
     internal void Split()
@@ -599,6 +695,9 @@ public sealed class EditorPanel : Panel
 
     private int BlendSamples => (int)(BlendChoices[Math.Max(0, _blend.SelectedIndex)].Seconds * EditTimeline.Rate);
 
+    private double FadeInSeconds => FadeChoices[Math.Max(0, _fadeIn.SelectedIndex)].Seconds;
+    private double FadeOutSeconds => FadeChoices[Math.Max(0, _fadeOut.SelectedIndex)].Seconds;
+
     private (string Text, double Speed, bool KeepPitch, bool Reverb) SpeedChoice => PackBuilder.SpeedChoices[Math.Max(0, _speed.SelectedIndex)];
 
     /// <summary>
@@ -661,6 +760,10 @@ public sealed class EditorPanel : Panel
         var speed = SpeedChoice;
         var part = EditTimeline.Slice(clips, from, (long)(PreviewSeconds * speed.Speed * EditTimeline.Rate));
         var audio = AudioFor(part);
+
+        // The preview is only a slice, so a fade shows only where the slice holds the song's real start or end.
+        double fadeIn = from == 0 ? FadeInSeconds : 0;
+        double fadeOut = from + EditTimeline.Length(part) >= total ? FadeOutSeconds : 0;
         int blend = BlendSamples;
         _status("Getting ready to play...");
         string file;
@@ -668,7 +771,7 @@ public sealed class EditorPanel : Panel
         {
             file = await Task.Run(() =>
             {
-                var rendered = ApplySpeed(EditTimeline.Render(part, source => audio[source], blend), speed);
+                var rendered = EditTimeline.ApplyFade(ApplySpeed(EditTimeline.Render(part, source => audio[source], blend), speed), EditTimeline.Rate, fadeIn, fadeOut);
                 return AudioIO.WriteRangePreview(rendered, EditTimeline.Rate, 0, PreviewSeconds + 1);
             });
         }
@@ -720,6 +823,7 @@ public sealed class EditorPanel : Panel
         var audio = AudioFor(clips);
         int blend = BlendSamples;
         var speed = SpeedChoice;
+        double saveFadeIn = FadeInSeconds, saveFadeOut = FadeOutSeconds;
         string folder = _songsFolder();
         _saving = true;
         UpdateState();
@@ -728,7 +832,7 @@ public sealed class EditorPanel : Panel
         {
             string path = await Task.Run(() =>
             {
-                var rendered = ApplySpeed(EditTimeline.Render(clips, source => audio[source], blend), speed);
+                var rendered = EditTimeline.ApplyFade(ApplySpeed(EditTimeline.Render(clips, source => audio[source], blend), speed), EditTimeline.Rate, saveFadeIn, saveFadeOut);
                 string seconds = AudioIO.WriteRangePreview(rendered, EditTimeline.Rate, 0, rendered[0].Length / (double)EditTimeline.Rate + 1);
                 Directory.CreateDirectory(folder);
                 string target = EditTimeline.UniquePath(folder, name);
@@ -842,6 +946,11 @@ public sealed class EditorPanel : Panel
     internal void SetNameForTest(string name) => _name.Box.Text = name;
     internal void SetBlendForTest(int index) => _blend.SelectedIndex = index;
     internal void SetSpeedForTest(int index) => _speed.SelectedIndex = index;
+    internal void SetFadesForTest(int fadeIn, int fadeOut)
+    {
+        _fadeIn.SelectedIndex = fadeIn;
+        _fadeOut.SelectedIndex = fadeOut;
+    }
     internal void SetEqualChoiceForTest(int index) => _equalLength.SelectedIndex = index;
     internal string InfoForTest => _info.Text;
     internal string NameForTest => _name.Box.Text;

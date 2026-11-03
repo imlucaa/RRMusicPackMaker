@@ -35,6 +35,12 @@ public sealed class AppSettings
     /// <summary>The app's background color as #RRGGBB, or empty for black.</summary>
     public string BackgroundColor { get; set; } = "";
 
+    /// <summary>The highest audio bitrate to download at, in kbps. Zero means the best a video has.</summary>
+    public int DownloadKbps { get; set; }
+
+    /// <summary>Whether the last export was for a real Wii (true) or for Dolphin (false).</summary>
+    public bool ExportForWii { get; set; } = true;
+
     /// <summary>A picture shown behind the main window, darkened so text stays readable. Empty for plain black.</summary>
     public string BackgroundImage { get; set; } = "";
 }
@@ -59,6 +65,29 @@ public static class AppStorage
 
     public static string AutosavePath => Path.Combine(Folder, "autosave.rrmusic.json");
     private static string SettingsPath => Path.Combine(Folder, "settings.json");
+    private static string PacksPath => Path.Combine(Folder, "packs.json");
+
+    /// <summary>The packs that aren't open right now, each with its tracks, songs and settings, by name.</summary>
+    public static Dictionary<string, Project> LoadPacks()
+    {
+        try
+        {
+            if (File.Exists(PacksPath))
+                return new Dictionary<string, Project>(JsonSerializer.Deserialize<Dictionary<string, Project>>(File.ReadAllText(PacksPath)) ?? [], StringComparer.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+        {
+            // A damaged list only costs the packs on it. Their songs are still where they were.
+        }
+        return new Dictionary<string, Project>(StringComparer.OrdinalIgnoreCase);
+    }
+
+    public static void SavePacks(Dictionary<string, Project> packs)
+    {
+        string temp = PacksPath + ".tmp";
+        File.WriteAllText(temp, JsonSerializer.Serialize(packs, new JsonSerializerOptions { WriteIndented = true }));
+        File.Move(temp, PacksPath, true);
+    }
 
     public static string DefaultOutputFolder =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "RR Music Packs");

@@ -34,8 +34,8 @@ public sealed class MainForm : Form
     private readonly FieldBox _filter = new("Search tracks, files or songs") { Dock = DockStyle.Fill };
     private readonly SideList _sidebar = new() { Dock = DockStyle.Fill, Tag = Theme.PanelTag };
     private readonly CleanGrid _grid = new() { Dock = DockStyle.Fill };
-    private readonly ModernButton _build = new() { Text = "Add to Patches", Tag = Theme.AccentTag, AutoSize = true, Height = 28, Padding = new Padding(10, 0, 10, 0), Margin = new Padding(6, 0, 0, 0) };
     private readonly ModernButton _openFolder = Footer("Show exported pack");
+    private readonly ModernButton _removeFromGame = Footer("Remove from game");
     private readonly ModernButton _updateButton = Footer("Update available");
     private readonly ModernButton _tabTracks = Tab("Tracks");
     private readonly ModernButton _tabEditor = Tab("Editor");
@@ -61,7 +61,8 @@ public sealed class MainForm : Form
     private readonly ModernButton _hearCurrent = new() { Text = "▶  Hear current music", Height = 28, Dock = DockStyle.Fill, Margin = new Padding(0, 8, 0, 0) };
     private readonly ComboBox _manyLoop = new FlatCombo { Width = 310, Margin = new Padding(0, 0, 0, 4) };
     private readonly ComboBox _manyFade = new FlatCombo { Width = 310, Margin = new Padding(0, 0, 0, 4) };
-    private readonly ComboBox _manyVolume = new FlatCombo { Width = 310, Margin = new Padding(0, 0, 0, 8) };
+    private readonly List<ModernButton> _nudgeButtons = [];
+    private readonly ComboBox _manyVolume = new FlatCombo { Width = 310, Margin = new Padding(0, 0, 0, 4), MaxDropDownItems = 14 };
     private readonly ComboBox _manySpeed = new FlatCombo { Width = 310, Margin = new Padding(0, 0, 0, 8), MaxDropDownItems = 14 };
     private readonly ComboBox _manySongPick = new FlatCombo { Width = 310, Margin = new Padding(0, 0, 0, 8), MaxDropDownItems = 14 };
     private readonly ComboBox _songPick = new FlatCombo { Dock = DockStyle.Top, Margin = new Padding(0, 8, 0, 0), MaxDropDownItems = 14 };
@@ -95,12 +96,18 @@ public sealed class MainForm : Form
     private readonly ModernButton _editLoop = new() { Text = "Edit loop", Height = 28, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 4, 8) };
     private readonly ModernButton _hearJump = new() { Text = "▶  Hear the jump", Height = 28, Dock = DockStyle.Fill, Margin = new Padding(4, 0, 0, 8) };
     private readonly ComboBox _crossfade = new FlatCombo { Dock = DockStyle.Top };
-    private readonly ComboBox _volume = new FlatCombo { Dock = DockStyle.Top };
+    private readonly ComboBox _volume = new FlatCombo { Dock = DockStyle.Top, MaxDropDownItems = 14 };
     private readonly ComboBox _speed = new FlatCombo { Dock = DockStyle.Top, MaxDropDownItems = 14 };
     private readonly Label _finalCaption = new() { Text = "Different song on the final lap", AutoSize = true, Margin = new Padding(0, 12, 0, 4) };
     private readonly Label _finalLabel = new() { AutoSize = true, MaximumSize = new Size(310, 0), Tag = Theme.MutedTag, Margin = new Padding(0, 0, 0, 6) };
     private readonly ModernButton _finalChoose = new() { Text = "Choose", Height = 28, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 4, 0) };
     private readonly ModernButton _finalRemove = new() { Text = "Remove", Height = 28, Dock = DockStyle.Fill, Margin = new Padding(4, 0, 0, 0) };
+    private readonly Label _finalVolumeCaption = new() { Text = "Volume of this song", AutoSize = true, Tag = Theme.MutedTag, Margin = new Padding(0, 8, 0, 3) };
+    private readonly ComboBox _finalVolume = new FlatCombo { Dock = DockStyle.Top, Margin = new Padding(0, 0, 0, 4), MaxDropDownItems = 14 };
+    private readonly Label _finalSongSpeedCaption = new() { Text = "Speed of this song", AutoSize = true, Tag = Theme.MutedTag, Margin = new Padding(0, 8, 0, 3) };
+    private readonly ComboBox _finalSongSpeed = new FlatCombo { Dock = DockStyle.Top, Margin = new Padding(0, 0, 0, 4), MaxDropDownItems = 14 };
+    private readonly ModernButton _hearFinal = new() { Text = "▶  Hear the final lap", Height = 28, Dock = DockStyle.Fill, Margin = new Padding(0, 4, 0, 0) };
+    private const string HearFinalText = "▶  Hear the final lap";
     private readonly Label _finalSpeedCaption = new() { Text = "Final lap speed", AutoSize = true, Tag = Theme.MutedTag, Margin = new Padding(0, 8, 0, 3) };
     private readonly ComboBox _finalSpeed = new FlatCombo { Dock = DockStyle.Top, Margin = new Padding(0, 0, 0, 4) };
     private readonly ComboBox _manyFinalSpeed = new FlatCombo { Width = 310, Margin = new Padding(0, 0, 0, 8) };
@@ -160,7 +167,7 @@ public sealed class MainForm : Form
 
     private async Task InstallFfmpegAsync()
     {
-        _build.Enabled = false;
+        _export.Enabled = false;
         _progress.Fraction = 0;
         try
         {
@@ -184,7 +191,7 @@ public sealed class MainForm : Form
         {
             if (!IsDisposed)
             {
-                _build.Enabled = true;
+                _export.Enabled = true;
                 _progress.Fraction = 0;
             }
         }
@@ -245,14 +252,17 @@ public sealed class MainForm : Form
         _packName.Margin = new Padding(14, 0, 6, 0);
         var tabs = new SegmentedBar { Margin = new Padding(0, 0, 0, 0) };
         tabs.Controls.AddRange([_tabTracks, _tabSongs, _tabEditor]);
-        headerLeft.Controls.AddRange([brand, tabs, _packName, _author]);
+        headerLeft.Controls.AddRange([brand, tabs, _packPick, _packName, _author]);
+        _packPick.SelectedIndexChanged += (_, _) => OnPackPicked();
         _tabTracks.Click += (_, _) => ShowTab(editor: false);
         _tabSongs.Click += (_, _) => ShowSongs();
         _tabEditor.Click += (_, _) => ShowTab(editor: true);
         _tabTracks.Tag = Theme.ActiveTag;
         var headerRight = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Padding = new Padding(0, 8, 10, 0) };
         var settings = Header("Settings");
-        headerRight.Controls.Add(settings);
+        headerRight.Controls.AddRange([settings, _deletePackButton, _saveButton]);
+        _saveButton.Click += (_, _) => SaveProgress();
+        _deletePackButton.Click += (_, _) => DeleteOpenPack();
         header.Controls.Add(headerRight);
         header.Controls.Add(headerLeft);
         settings.Click += (_, _) => OpenSettings();
@@ -260,7 +270,9 @@ public sealed class MainForm : Form
         // Bottom bar.
         var footer = new Panel { Dock = DockStyle.Bottom, Height = 42 };
         var footerRight = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Padding = new Padding(0, 7, 10, 0) };
-        footerRight.Controls.AddRange([_build, _export, _importPack, _openFolder, _updateButton]);
+        footerRight.Controls.AddRange([_export, _importPack, _removeFromGame, _openFolder, _updateButton]);
+        _removeFromGame.Visible = false;
+        _removeFromGame.Click += (_, _) => RemovePackFromGame();
         _importPack.Click += async (_, _) => await PickPackToImportAsync();
         AudioPreview.Changed += ShowPreviewButtons;
         ShowPreviewButtons();
@@ -270,7 +282,6 @@ public sealed class MainForm : Form
         footerLeft.Controls.Add(_status);
         footer.Controls.Add(footerLeft);
         footer.Controls.Add(footerRight);
-        _build.Click += async (_, _) => await AddToPatchesAsync();
         _export.Click += async (_, _) => await ExportPackAsync();
         _openFolder.Click += (_, _) => OpenBuildFolder();
         ShowInstallButtons(false);
@@ -325,7 +336,9 @@ public sealed class MainForm : Form
             path => _rows.Count(row => string.Equals(Path.GetFullPath(row.Source.Length > 0 ? row.Source : "x"), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase)),
             SongDeleted, _library);
         _songsPage = new SongsPanel(_library, () => DownloadFolder, message => _status.Text = message, WriteLog, new SongsPanelActions(
-            TracksUsing, RemoveSongFromTracks, _editor.ConfirmDeleteSong, OpenSongInEditor));
+            TracksUsing, RemoveSongFromTracks, _editor.ConfirmDeleteSong, OpenSongInEditor, ConfirmDeleteSongs, OpenDeletePacks,
+            TracksUsingAny, RemoveSongsFromTracks, TrackCounts));
+        _editor.SongsDeleted = SongsDeleted;
 
         Controls.Add(_body);
         Controls.Add(_editor);
@@ -335,7 +348,15 @@ public sealed class MainForm : Form
         Controls.Add(footer);
         Controls.Add(header);
 
-        _packName.Box.TextChanged += (_, _) => MarkDirty();
+        _packName.Box.TextChanged += (_, _) =>
+        {
+            MarkDirty();
+            if (_packPick.Items.Count > 0 && !_switchingPack)
+                _packPick.Items[0] = CurrentPackName;
+        };
+
+        // Renaming the open pack is typing in the name box. A name another pack already has gets a number when you leave the box.
+        _packName.Box.Leave += (_, _) => KeepPackNameUnique();
         _author.Box.TextChanged += (_, _) => MarkDirty();
     }
 
@@ -375,27 +396,90 @@ public sealed class MainForm : Form
 
     private int TracksUsing(string path) => RowsUsing(path).Count;
 
-    /// <summary>Tracks go back to their old music. The song itself stays in the list.</summary>
-    private int RemoveSongFromTracks(string path)
+    /// <summary>How many tracks use any of these songs. One pass over the tracks, however many songs there are.</summary>
+    private int TracksUsingAny(IReadOnlyCollection<string> paths)
     {
-        var rows = RowsUsing(path);
-        foreach (var row in rows)
+        var set = new HashSet<string>(paths.Select(Path.GetFullPath), StringComparer.OrdinalIgnoreCase);
+        return _rows.Count(row => (row.Source.Length > 0 && set.Contains(Path.GetFullPath(row.Source)))
+            || (row.FinalSource.Length > 0 && set.Contains(Path.GetFullPath(row.FinalSource))));
+    }
+
+    /// <summary>How many tracks use each song, worked out in one pass for the whole Songs list.</summary>
+    private Dictionary<string, int> TrackCounts()
+    {
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in _rows)
         {
-            if (SamePath(row.Source, path))
+            string? source = row.Source.Length > 0 ? Path.GetFullPath(row.Source) : null;
+            string? final = row.FinalSource.Length > 0 ? Path.GetFullPath(row.FinalSource) : null;
+            if (source != null)
+                counts[source] = counts.GetValueOrDefault(source) + 1;
+            if (final != null && !string.Equals(final, source, StringComparison.OrdinalIgnoreCase))
+                counts[final] = counts.GetValueOrDefault(final) + 1;
+        }
+        return counts;
+    }
+
+    /// <summary>Tracks go back to their old music. The song itself stays in the list.</summary>
+    private int RemoveSongFromTracks(string path) => RemoveSongsFromTracks([path]);
+
+    /// <summary>Takes many songs off their tracks and refreshes the lists once, not once per song.</summary>
+    private int RemoveSongsFromTracks(IReadOnlyCollection<string> paths)
+    {
+        var gone = new HashSet<string>(paths.Select(Path.GetFullPath), StringComparer.OrdinalIgnoreCase);
+        int changed = 0;
+        foreach (var row in _rows)
+        {
+            bool hit = false;
+            if (row.Source.Length > 0 && gone.Contains(Path.GetFullPath(row.Source)))
             {
                 row.Source = "";
                 row.Song = "";
+                hit = true;
             }
-            if (SamePath(row.FinalSource, path))
+            if (row.FinalSource.Length > 0 && gone.Contains(Path.GetFullPath(row.FinalSource)))
+            {
                 row.FinalSource = "";
-            row.Status = "";
+                hit = true;
+            }
+            if (hit)
+            {
+                row.Status = "";
+                changed++;
+            }
         }
-        if (rows.Count > 0)
+        if (changed > 0)
         {
             ShowDetails();
             RefreshAfterChange();
         }
-        return rows.Count;
+        return changed;
+    }
+
+    /// <summary>Asks once, then deletes every picked song.</summary>
+    private async void ConfirmDeleteSongs(IReadOnlyList<string> songs)
+    {
+        var others = songs.Where(song => !_library.IsOwned(song)).ToList();
+        int tracks = TracksUsingAny(songs.ToList());
+        var lines = new List<string> { $"Delete {songs.Count} songs? Ones you downloaded, made or got from an imported pack go to the Recycle Bin." };
+        if (others.Count > 0)
+            lines.Add($"{others.Count} {(others.Count == 1 ? "is a file" : "are files")} you imported from elsewhere.\r\n\r\nYes: delete those files too.\r\nNo: only take them off the list, and leave the files where they are.");
+        if (tracks > 0)
+            lines.Add($"{tracks} {(tracks == 1 ? "track uses" : "tracks use")} these songs and will go back to their old music. Packs you already made aren't affected.");
+        var answer = MessageBox.Show(this, string.Join("\r\n\r\n", lines), "Delete songs",
+            others.Count > 0 ? MessageBoxButtons.YesNoCancel : MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+        if (answer == DialogResult.Yes)
+            await _editor.DeleteSongsAsync(songs, deleteAllFiles: true);
+        else if (answer == DialogResult.No && others.Count > 0)
+            await _editor.DeleteSongsAsync(songs, deleteAllFiles: false);
+    }
+
+    /// <summary>Several songs went at once: the tracks that used them are cleared and the lists refreshed one time.</summary>
+    private void SongsDeleted(IReadOnlyList<string> songs)
+    {
+        RemoveSongsFromTracks(songs.ToList());
+        RunChecks(force: true);
+        _songsPage.RefreshList();
     }
 
     /// <summary>A deleted song can't play any more, so it comes off the tracks that used it.</summary>
@@ -524,8 +608,13 @@ public sealed class MainForm : Form
         Wide(_finalCaption);
         Wide(_finalLabel);
         Pair(_finalChoose, _finalRemove);
+        Wide(_finalVolumeCaption);
+        Wide(_finalVolume);
+        Wide(_finalSongSpeedCaption);
+        Wide(_finalSongSpeed);
         Wide(_finalSpeedCaption);
         Wide(_finalSpeed);
+        Wide(_hearFinal);
         Wide(_namesToggle);
         _songOnly.Add(_namesToggle);
         int beforeNames = _songOnly.Count;
@@ -548,6 +637,12 @@ public sealed class MainForm : Form
             _speed.Items.Add(choice.Text);
         foreach (var (text, _) in PackBuilder.FinalSpeedChoices)
             _finalSpeed.Items.Add(text);
+        _finalVolume.Items.Add("Same as the song");
+        foreach (int db in PackBuilder.VolumeChoices)
+            _finalVolume.Items.Add(db == 0 ? "Normal" : $"{db:+0;-0} dB");
+        _finalSongSpeed.Items.Add("Same as the song");
+        foreach (var choice in PackBuilder.SpeedChoices)
+            _finalSongSpeed.Items.Add(choice.Text);
 
         _songPick.SelectedIndexChanged += (_, _) => PickSong(_songPick.SelectedIndex);
         _choose.Click += (_, _) => ChooseSource();
@@ -583,7 +678,26 @@ public sealed class MainForm : Form
             ShowDetails();
             MarkDirty();
         };
-        _finalSpeed.SelectedIndexChanged += (_, _) => DetailChanged(r => r.FinalSpeed = PackBuilder.FinalSpeedChoices[Math.Max(0, _finalSpeed.SelectedIndex)].Speed);
+        _hearFinal.Click += async (_, _) =>
+        {
+            if (IsHearing(_hearFinal))
+                AudioPreview.TogglePause();
+            else
+                await HearFinalAsync();
+        };
+        _finalVolume.SelectedIndexChanged += (_, _) => DetailChanged(r => r.FinalVolumeDb = _finalVolume.SelectedIndex <= 0 ? null : PackBuilder.VolumeChoices[_finalVolume.SelectedIndex - 1]);
+        _finalSongSpeed.SelectedIndexChanged += (_, _) => DetailChanged(r =>
+        {
+            int choice = _finalSongSpeed.SelectedIndex - 1;
+            r.FinalSongSpeed = choice < 0 ? 0 : PackBuilder.SpeedChoices[choice].Speed;
+            r.FinalSongKeepPitch = choice >= 0 && PackBuilder.SpeedChoices[choice].KeepPitch;
+            r.FinalSongReverb = choice >= 0 && PackBuilder.SpeedChoices[choice].Reverb;
+        });
+        _finalSpeed.SelectedIndexChanged += (_, _) =>
+        {
+            DetailChanged(r => r.FinalSpeed = PackBuilder.FinalSpeedChoices[Math.Max(0, _finalSpeed.SelectedIndex)].Speed);
+            HearChangeIfListening();
+        };
         _song.Box.TextChanged += (_, _) => DetailChanged(r => r.Song = _song.Box.Text);
         _credits.Box.TextChanged += (_, _) => DetailChanged(r => r.Credits = _credits.Box.Text);
         _loopMode.SelectedIndexChanged += (_, _) => DetailChanged(r =>
@@ -650,6 +764,15 @@ public sealed class MainForm : Form
         Bulk("Loop", _manyLoop);
         Bulk("Smooth the jump", _manyFade);
         Bulk("Volume", _manyVolume);
+        var nudge = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 8) };
+        foreach (var (text, step) in new[] { ("Louder  +1 dB", 1), ("Quieter  −1 dB", -1) })
+        {
+            var button = new ModernButton { Text = text, Width = 151, Height = 28, Margin = new Padding(0, 0, 8, 0) };
+            button.Click += (_, _) => ApplyToSelected(r => r.VolumeDb = PackBuilder.StepVolume(r.VolumeDb, step));
+            _nudgeButtons.Add(button);
+            nudge.Controls.Add(button);
+        }
+        _many.Controls.Add(nudge);
         Bulk("Speed", _manySpeed);
         _manyFinalSpeed.Items.Add(NoChange);
         foreach (var (text, _) in PackBuilder.FinalSpeedChoices)
@@ -802,6 +925,11 @@ public sealed class MainForm : Form
     /// <summary>Changing a setting while listening starts the song again, so the change is heard straight away.</summary>
     private void HearChangeIfListening()
     {
+        if (!_loading && IsHearing(_hearFinal))
+        {
+            _ = HearFinalAsync();
+            return;
+        }
         if (!_loading && _hearingSong && IsHearing(_hearCurrent))
             _ = HearSongAsync();
     }
@@ -813,6 +941,7 @@ public sealed class MainForm : Form
         string pauseText = AudioPreview.State == PreviewState.Paused ? "▶  Resume" : "❚❚  Pause";
         _hearCurrent.Text = IsHearing(_hearCurrent) ? pauseText : _selected is { IsAssigned: true } ? HearSongText : HearCurrentText;
         _hearJump.Text = IsHearing(_hearJump) ? pauseText : HearJumpText;
+        _hearFinal.Text = IsHearing(_hearFinal) ? pauseText : HearFinalText;
         if (active)
             _status.Text = AudioPreview.State == PreviewState.Paused ? "Paused." : "Playing. Press Esc to stop.";
     }
@@ -833,6 +962,11 @@ public sealed class MainForm : Form
     /// <summary>Delete and Space only act on the track list, so they still type normally in text boxes.</summary>
     internal bool HandleShortcut(Keys key)
     {
+        if (key == (Keys.Control | Keys.S))
+        {
+            SaveProgress();
+            return true;
+        }
         if (_editor.Visible)
         {
             if (_editor.HandleShortcut(key))
@@ -1184,6 +1318,176 @@ public sealed class MainForm : Form
         _options.Author = _author.Box.Text;
     }
 
+    // Packs you've put aside, each with its own tracks and songs. Opening another never changes them.
+    private Dictionary<string, Project> _otherPacks = AppStorage.LoadPacks();
+    private readonly ComboBox _packPick = new FlatCombo { Width = 170, Margin = new Padding(14, 0, 0, 0), MaxDropDownItems = 14 };
+    private const string NewPackChoice = "+ New pack";
+    private readonly ModernButton _saveButton = new() { Text = "Save", AutoSize = true, Height = 26, Margin = new Padding(6, 0, 0, 0) };
+    private readonly ModernButton _deletePackButton = new() { Text = "Delete pack", AutoSize = true, Height = 26, Margin = new Padding(6, 0, 0, 0) };
+
+    /// <summary>
+    /// Saves the open pack right now, with its tracks, songs and settings. It's also saved by itself as you work and when the
+    /// app closes, so this is only for peace of mind: nothing has to be exported to be kept.
+    /// </summary>
+    internal void SaveProgress()
+    {
+        SaveNow();
+        AppStorage.SavePacks(_otherPacks);
+        SetStatus($"Saved \"{CurrentPackName}\". It's kept for next time, so you don't need to export it to keep it.");
+    }
+
+    /// <summary>
+    /// Deletes the open pack's tracks and settings, then opens another pack, or a new empty one if it was the only one.
+    /// The song files stay in your songs list and on disk.
+    /// </summary>
+    internal void DeleteOpenPack()
+    {
+        ReadNames();
+        string name = CurrentPackName;
+        int tracks = _rows.Count(row => row.IsAssigned);
+        bool sure = ConfirmDeleteOpenPackForTest ?? MessageBox.Show(this,
+            $"Delete the pack \"{name}\"{(tracks > 0 ? $" and its {tracks} tracks" : "")}?\r\n\r\nIts tracks and settings are removed. The song files stay in your songs list and on your PC, and packs you already exported aren't touched.\r\n\r\nThis can't be undone.",
+            "Delete pack", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes;
+        if (!sure)
+            return;
+
+        string? next = _otherPacks.Keys.OrderBy(key => key, StringComparer.OrdinalIgnoreCase).FirstOrDefault();
+        Project project;
+        if (next != null)
+        {
+            project = _otherPacks[next];
+            _otherPacks.Remove(next);
+            AppStorage.SavePacks(_otherPacks);
+        }
+        else
+        {
+            var options = new Options();
+            CopyOptions(_options, options);
+            options.PackName = "My Music Pack";
+            project = new Project { Options = options };
+        }
+        OpenPack(project);
+        SetStatus($"Deleted \"{name}\".");
+    }
+
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal bool? ConfirmDeleteOpenPackForTest { get; set; }
+    private bool _switchingPack;
+
+    private string CurrentPackName => string.IsNullOrWhiteSpace(_packName.Box.Text) ? "My Music Pack" : _packName.Box.Text.Trim();
+
+    /// <summary>Lists the open pack first, then the ones set aside, then a way to start another.</summary>
+    private void RefreshPackPick()
+    {
+        _switchingPack = true;
+        _packPick.Items.Clear();
+        _packPick.Items.Add(CurrentPackName);
+        foreach (string name in _otherPacks.Keys.OrderBy(name => name, StringComparer.OrdinalIgnoreCase))
+            _packPick.Items.Add(name);
+        _packPick.Items.Add(NewPackChoice);
+        _packPick.SelectedIndex = 0;
+        _switchingPack = false;
+    }
+
+    private void OnPackPicked()
+    {
+        if (_switchingPack || _packPick.SelectedIndex <= 0)
+            return;
+        string choice = _packPick.SelectedItem?.ToString() ?? "";
+        if (choice == NewPackChoice)
+            StartNewPack(null);
+        else
+            SwitchPack(choice);
+    }
+
+    internal void KeepPackNameUnique()
+    {
+        string typed = CurrentPackName;
+        if (!_otherPacks.ContainsKey(typed))
+            return;
+        string name = typed;
+        for (int number = 2; _otherPacks.ContainsKey(name); number++)
+            name = $"{typed} {number}";
+        _packName.Box.Text = name;
+    }
+
+    internal void RenameOpenPackForTest(string name)
+    {
+        _packName.Box.Text = name;
+        KeepPackNameUnique();
+    }
+
+    private string UniquePackName(string wanted)
+    {
+        string name = wanted;
+        for (int number = 2; name.Equals(CurrentPackName, StringComparison.OrdinalIgnoreCase) || _otherPacks.ContainsKey(name); number++)
+            name = $"{wanted} {number}";
+        return name;
+    }
+
+    /// <summary>
+    /// Puts the open pack aside, with all its tracks and settings, unless nothing is set on it. Two packs never share
+    /// a name, so one that has the same name as another is given a number, and nothing is ever written over.
+    /// </summary>
+    private void StashCurrentPack(string? openNext = null)
+    {
+        ReadNames();
+        var project = Project.From(_options, _rows).Clone();
+        if (project.Rows.Count == 0)
+            return;
+        string key = CurrentPackName;
+        for (int number = 2; _otherPacks.ContainsKey(key) || key.Equals(openNext, StringComparison.OrdinalIgnoreCase); number++)
+            key = $"{CurrentPackName} {number}";
+        project.Options.PackName = key;
+        _otherPacks[key] = project;
+        AppStorage.SavePacks(_otherPacks);
+    }
+
+    /// <summary>Opens a pack that was put aside. The one that's open now is put aside in its place.</summary>
+    internal void SwitchPack(string name)
+    {
+        if (!_otherPacks.TryGetValue(name, out var target))
+            return;
+
+        // The pack being opened leaves the list first, so a pack with the same name as the open one can't be written over.
+        _otherPacks.Remove(name);
+        StashCurrentPack(openNext: name);
+        AppStorage.SavePacks(_otherPacks);
+        OpenPack(target);
+    }
+
+    /// <summary>Puts the open pack aside and opens an empty one.</summary>
+    internal void StartNewPack(string? name)
+    {
+        StashCurrentPack();
+        var options = new Options();
+        CopyOptions(_options, options);
+        options.PackName = UniquePackName(name ?? "New pack");
+        options.Author = _options.Author;
+        OpenPack(new Project { Options = options });
+    }
+
+    private void OpenPack(Project project)
+    {
+        bool wasLoading = _loading;
+        _loading = true;
+        _switchingPack = true;
+        ApplyProject(project);
+        _switchingPack = false;
+        _loading = wasLoading;
+        RefreshPackPick();
+        _category = "";
+        SaveNow();
+    }
+
+    internal IEnumerable<string> PackChoicesForTest => _packPick.Items.Cast<object>().Select(item => item.ToString()!);
+    internal void PickPackForTest(string name) => _packPick.SelectedIndex = _packPick.Items.IndexOf(name);
+
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal DialogResult? ImportChoiceForTest { get; set; }
+
     private void LoadAutosave()
     {
         _loading = true;
@@ -1206,6 +1510,7 @@ public sealed class MainForm : Form
             ReloadCatalog(null);
         }
         _loading = false;
+        RefreshPackPick();
     }
 
     private void ApplyProject(Project project)
@@ -1250,6 +1555,15 @@ public sealed class MainForm : Form
         if (Directory.Exists(patches))
             foreach (string file in Directory.GetFiles(patches, "*.brstm"))
                 _inGame.Add(Path.GetFileNameWithoutExtension(file));
+
+        // The strm folder holds Retro Rewind's own songs too, so only the ones this app put there count.
+        string backups = PackBuilder.StrmBackupFolder(OutputFolder);
+        if (Directory.Exists(backups))
+            foreach (string name in PackBuilder.PlacedInStrm(backups))
+                _inGame.Add(Path.GetFileNameWithoutExtension(name));
+
+        // The way to take the pack out shows once there is something in the game to take out.
+        _removeFromGame.Visible = _rows.Any(row => row.IsAssigned && _inGame.Contains(row.FileBase));
     }
 
     private void RebuildSidebar(string? select)
@@ -1409,7 +1723,7 @@ public sealed class MainForm : Form
         _deleteTrackSong.Visible = has;
         _single.SetColumnSpan(_fromWeb, has ? 1 : 2);
         _fromWeb.Margin = new Padding(0, 8, has ? 4 : 0, 0);
-        _deleteTrackSong.Text = has && !_library.IsOwned(row!.Source) ? "Remove from list" : "Delete song";
+        _deleteTrackSong.Text = "Delete song";
         _single.SetColumnSpan(_choose, has ? 1 : 2);
         _choose.Margin = new Padding(0, 0, has ? 4 : 0, 0);
         foreach (Control control in _songOnly.Concat(new Control[] { _editLoop, _hearJump }))
@@ -1420,8 +1734,15 @@ public sealed class MainForm : Form
         ShowPreviewButtons();
 
         bool canHaveFinal = row != null && (row.StockFinalBase != null || row.PulsarFinalBase != null);
-        foreach (Control control in new Control[] { _finalCaption, _finalLabel, _finalChoose, _finalRemove, _finalSpeedCaption, _finalSpeed })
+        foreach (Control control in new Control[] { _finalCaption, _finalLabel, _finalChoose, _finalRemove, _finalSpeedCaption, _finalSpeed, _hearFinal })
             control.Visible = canHaveFinal && has;
+
+        // Volume and speed of the song picked for the final lap only make sense once there is one.
+        bool hasFinalSong = canHaveFinal && has && row!.FinalSource.Length > 0;
+        foreach (Control control in new Control[] { _finalVolumeCaption, _finalVolume, _finalSongSpeedCaption, _finalSongSpeed })
+            control.Visible = hasFinalSong;
+        _finalVolume.SelectedIndex = row?.FinalVolumeDb is int finalDb ? PackBuilder.VolumeIndex(finalDb) + 1 : 0;
+        _finalSongSpeed.SelectedIndex = row is { FinalSongSpeed: > 0 } ? PackBuilder.SpeedIndex(row.FinalSongSpeed, row.FinalSongKeepPitch, row.FinalSongReverb) + 1 : 0;
         _finalLabel.Text = row?.FinalSource.Length > 0 ? Path.GetFileName(row.FinalSource) : "None. The final lap plays this song, sped up.";
         _finalSpeed.SelectedIndex = PackBuilder.FinalSpeedIndex(row?.FinalSpeed ?? PackBuilder.GameFinalSpeed);
         _finalRemove.Enabled = row?.FinalSource.Length > 0;
@@ -1491,14 +1812,18 @@ public sealed class MainForm : Form
     {
         bool wasLoading = _loading;
         _loading = true;
-        _songPaths = _library.Songs;
+        // Songs copied in with an imported pack are already on their tracks, so they stay out of the dropdown.
+        // The Songs tab still lists every song.
+        // The one exception is the song on the track you're looking at, which has to show so you can see what it is.
+        _songPaths = _library.Songs.Where(song => !_library.IsFromImportedPack(song)
+            || (_pinnedSong != null && song.Equals(_pinnedSong, StringComparison.OrdinalIgnoreCase))).ToList();
         foreach (var combo in new[] { _songPick, _manySongPick })
         {
             combo.BeginUpdate();
             combo.Items.Clear();
             combo.Items.Add(_songPaths.Count > 0 ? "Pick from your songs" : "No songs yet. Import or download one.");
             foreach (string song in _songPaths)
-                combo.Items.Add(_library.LabelOf(song));
+                combo.Items.Add(PickLabel(song));
             combo.EndUpdate();
             combo.Enabled = _songPaths.Count > 0;
         }
@@ -1507,9 +1832,34 @@ public sealed class MainForm : Form
     }
 
     /// <summary>Shows the song the selected tracks share, or the prompt when they differ or have none.</summary>
+    private string? _pinnedSong;
+
+    /// <summary>
+    /// A song's name in the dropdown. A pack's files are named by track slot, like 6_N, so the song on the track you're
+    /// looking at is shown by its title when it has one, with the file name after it.
+    /// </summary>
+    private string PickLabel(string song)
+    {
+        if (_pinnedSong != null && song.Equals(_pinnedSong, StringComparison.OrdinalIgnoreCase)
+            && SelectedRows().FirstOrDefault()?.Song is { Length: > 0 } title
+            && !title.Equals(Path.GetFileNameWithoutExtension(song), StringComparison.OrdinalIgnoreCase))
+            return $"{title}  ({Path.GetFileNameWithoutExtension(song)})";
+        return _library.LabelOf(song);
+    }
+
     private void ShowPickedSong()
     {
         var sources = SelectedRows().Select(row => row.Source).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+        // A song from an imported pack isn't in the dropdown, but the track that uses it still shows it.
+        string? shared = sources.Count == 1 && sources[0].Length > 0 ? Path.GetFullPath(sources[0]) : null;
+        string? wanted = shared != null && _library.IsFromImportedPack(shared) && File.Exists(shared) ? shared : null;
+        if (!string.Equals(wanted, _pinnedSong, StringComparison.OrdinalIgnoreCase))
+        {
+            _pinnedSong = wanted;
+            RefreshSongPicks();
+            return;
+        }
         int index = sources.Count == 1 && sources[0].Length > 0
             ? _songPaths.FindIndex(song => song.Equals(Path.GetFullPath(sources[0]), StringComparison.OrdinalIgnoreCase)) + 1
             : 0;
@@ -1638,12 +1988,33 @@ public sealed class MainForm : Form
             ImportFiles(files);
     }
 
+    /// <summary>True for a Retro Rewind strm folder, the one the app adds songs to or any other install's.</summary>
+    internal bool IsGameMusicFolder(string path)
+    {
+        if (!Directory.Exists(path))
+            return false;
+        string full = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar);
+        if (_options.RetroRewindFolder.Length > 0
+            && full.Equals(Path.GetFullPath(PackBuilder.StrmFolder(_options.RetroRewindFolder)).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
+            return true;
+        string? parent = Path.GetDirectoryName(full);
+        return Path.GetFileName(full).Equals("strm", StringComparison.OrdinalIgnoreCase) && parent != null
+            && Directory.Exists(Path.Combine(parent, "Binaries"));
+    }
+
+    /// <summary>A window for deleting packs only, so it isn't part of importing or exporting.</summary>
+    private void OpenDeletePacks()
+    {
+        using var form = new ImportPackForm(PackImporter.FindInstalled(_options.RetroRewindFolder, PackBuilder.ModsFolders(), OutputFolder), ConfirmDeletePack, deleteOnly: true);
+        form.ShowDialog(this);
+    }
+
     private string OutputFolder => _settings.OutputFolder.Length > 0 ? _settings.OutputFolder : AppStorage.DefaultOutputFolder;
 
-    private bool ConfirmDeletePack(InstalledPack pack)
+    private async Task<bool> ConfirmDeletePack(InstalledPack pack)
     {
         var plan = PackImporter.DeletePlan(pack);
-        int tracks = plan.Songs.Sum(TracksUsing);
+        int tracks = TracksUsingAny(plan.Songs);
         string songs = $"{plan.Songs.Length} {(plan.Songs.Length == 1 ? "song" : "songs")}";
         string name = Path.GetFileName(pack.Folder);
         string message = plan.WholeFolder
@@ -1659,14 +2030,29 @@ public sealed class MainForm : Form
             message += $"\r\n\r\n{tracks} {(tracks == 1 ? "track uses" : "tracks use")} these songs and will go back to their old music.";
         if (MessageBox.Show(this, message, "Delete pack", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
             return false;
-        return DeletePack(pack);
+        return await DeletePackAsync(pack);
     }
 
     /// <summary>Sends a pack's songs to the Recycle Bin, and clears them from tracks, the list and the timeline.</summary>
     internal bool DeletePack(InstalledPack pack)
     {
+        var (removed, error) = DeleteFiles(pack);
+        return FinishDelete(pack, removed, error);
+    }
+
+    /// <summary>The same, but the slow part, sending hundreds of files to the Recycle Bin, runs off the window so it stays responsive.</summary>
+    internal async Task<bool> DeletePackAsync(InstalledPack pack)
+    {
+        SetStatus($"Deleting {Path.GetFileName(pack.Folder)}... This can take a while for a big pack.");
+        var (removed, error) = await Task.Run(() => DeleteFiles(pack));
+        return !IsDisposed && FinishDelete(pack, removed, error);
+    }
+
+    /// <summary>Only touches files, so it's safe to run in the background. Returns what went, and why it stopped if it did.</summary>
+    private (List<string> Removed, string? Error) DeleteFiles(InstalledPack pack)
+    {
         var removed = new List<string>();
-        bool worked = true;
+        string? error = null;
         try
         {
             var plan = PackImporter.DeletePlan(pack);
@@ -1689,14 +2075,22 @@ public sealed class MainForm : Form
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OperationCanceledException)
         {
-            worked = false;
+            error = ex.Message;
+        }
+        return (removed, error);
+    }
+
+    private bool FinishDelete(InstalledPack pack, List<string> removed, string? error)
+    {
+        bool worked = error == null;
+        if (!worked)
+        {
             SetStatus("Could not delete all of that pack. See the log for why.");
-            WriteLog($"Could not delete {pack.Folder}. {ex.Message}");
+            WriteLog($"Could not delete {pack.Folder}. {error}");
         }
 
         // Whatever did go has to leave everywhere, even if something else in the pack was stuck.
-        foreach (string song in removed)
-            RemoveSongFromTracks(song);
+        RemoveSongsFromTracks(removed);
         if (removed.Count > 0)
         {
             _library.Remove(removed);
@@ -1746,6 +2140,33 @@ public sealed class MainForm : Form
     /// <summary>Brings a pack back in as songs on tracks. When tracks already have songs and no answer is given, it asks.</summary>
     internal async Task ImportPackAsync(string path, bool? replaceAssigned = null)
     {
+        // Retro Rewind's own strm folder is full of the game's songs, named like tracks. Importing it would copy
+        // hundreds of them into your songs, so only the songs this app put there are brought in.
+        if (IsGameMusicFolder(path))
+        {
+            string backups = PackBuilder.StrmBackupFolder(OutputFolder);
+            var mine = Directory.Exists(backups)
+                ? PackBuilder.PlacedInStrm(backups).Select(name => Path.Combine(path, name)).Where(File.Exists).ToArray()
+                : [];
+            if (mine.Length == 0)
+            {
+                SetStatus("That's Retro Rewind's own music folder, so there's nothing of yours in it to import.");
+                return;
+            }
+            WriteLog($"That's Retro Rewind's own music folder. Only the {mine.Length} songs you added to it are imported, not the game's.");
+            // Copied out first, because the game's folder is where the next Add to strm writes.
+            string copyFolder = PackImporter.NewFolder(OutputFolder, "Songs from strm");
+            Directory.CreateDirectory(copyFolder);
+            var copies = mine.Select(file =>
+            {
+                string copy = Path.Combine(copyFolder, Path.GetFileName(file));
+                File.Copy(file, copy, true);
+                return copy;
+            }).ToArray();
+            ImportFiles(copies, replaceAssigned);
+            return;
+        }
+
         bool isZip = File.Exists(path);
         string packName = Path.GetFileNameWithoutExtension(path.TrimEnd('\\', '/'));
         string output = OutputFolder;
@@ -1768,6 +2189,28 @@ public sealed class MainForm : Form
             {
                 SetStatus("There are no .brstm songs in there.");
                 return;
+            }
+
+            // A pack that's already open isn't overwritten. The new one opens on its own, and the old one waits in the pack list.
+            if (replaceAssigned == null && plan.Tracks > 0 && _rows.Any(row => row.IsAssigned))
+            {
+                string open = CurrentPackName;
+                var choice = ImportChoiceForTest ?? MessageBox.Show(this,
+                    $"\"{open}\" is open with {_rows.Count(row => row.IsAssigned)} tracks set.\r\n\r\nYes: open \"{packName}\" as its own pack, and keep \"{open}\" as it is.\r\nNo: put its songs on the current tracks instead.\r\nCancel: don't import.",
+                    "Import a pack", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
+                if (choice == DialogResult.Cancel)
+                {
+                    _status.Text = "";
+                    return;
+                }
+                if (choice == DialogResult.Yes)
+                {
+                    // The empty pack has its own tracks, so the songs are matched to those instead.
+                    StartNewPack(packName);
+                    rows = _rows.ToList();
+                    plan = await Task.Run(() => PackImporter.Plan(folder, rows));
+                    replaceAssigned = true;
+                }
             }
 
             bool replace = replaceAssigned ?? true;
@@ -1872,6 +2315,39 @@ public sealed class MainForm : Form
         }
     }
 
+    /// <summary>Plays the track as it sounds on the final lap: its final lap song if it has one, sped up by the final lap speed.</summary>
+    internal async Task HearFinalAsync()
+    {
+        if (_selected is not { IsAssigned: true } row)
+            return;
+        string source = row.FinalSource.Length > 0 ? row.FinalSource : row.Source;
+        if (!File.Exists(source))
+        {
+            SetStatus("The song file is missing.");
+            return;
+        }
+        _playingButton = _hearFinal;
+        _playingRow = row;
+        _hearingSong = false;
+        SetStatus("Getting the final lap ready...");
+        try
+        {
+            var options = _options;
+            string file = await Task.Run(() => PackBuilder.RenderFinalPreview(options, row));
+            if (IsDisposed)
+                return;
+            _playingButton = _hearFinal;
+            _playingRow = row;
+            if (PlayPreview(file))
+                SetStatus($"Playing the final lap at {row.FinalSpeed:0.##}x. Press Esc to stop.");
+        }
+        catch (Exception ex) when (ex is InvalidDataException or FileNotFoundException or FormatException or IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+        {
+            if (!IsDisposed)
+                SetStatus($"Could not play it. {ex.Message}");
+        }
+    }
+
     private async Task HearJumpAsync()
     {
         if (_selected is not { IsAssigned: true } row)
@@ -1950,8 +2426,8 @@ public sealed class MainForm : Form
     {
         ReadNames();
         string name = PackBuilder.SafeName(_options.PackName);
-        var answer = MessageBox.Show(this,
-            $"Do you want to remove \"{name}\" from the game?\r\n\r\nIts Wheel Wizard mod and its songs in Patches will be deleted, and tracks go back to their old music.\r\n\r\nYour exported pack, your song files and this project stay.",
+        var answer = ConfirmRemoveForTest is { } sure ? (sure ? DialogResult.Yes : DialogResult.No) : MessageBox.Show(this,
+            $"Do you want to remove \"{name}\" from the game?\r\n\r\nIts Wheel Wizard mod and its songs will be removed, Retro Rewind's own songs in the strm folder are put back, and tracks go back to their old music.\r\n\r\nYour exported pack, your song files and this project stay.",
             "Remove pack", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
         if (answer != DialogResult.Yes)
             return;
@@ -1959,12 +2435,12 @@ public sealed class MainForm : Form
         {
             string output = _settings.OutputFolder.Length > 0 ? _settings.OutputFolder : AppStorage.DefaultOutputFolder;
             string music = Path.Combine(output, name, "RetroRewind6", "Patches");
-            int removed = PackBuilder.RemovePack(_options.PackName, PackBuilder.ModsFolders(), _options.RetroRewindFolder, music);
+            int removed = PackBuilder.RemovePack(_options.PackName, PackBuilder.ModsFolders(), _options.RetroRewindFolder, music, PackBuilder.StrmBackupFolder(OutputFolder));
             foreach (var row in _rows)
                 row.Status = "";
             ScanInstalled();
             _grid.Invalidate();
-            SetStatus($"Removed {name} from the game, along with {removed} files in Patches. Restart Wheel Wizard if it's open.");
+            SetStatus($"Removed {name} from the game, along with {removed} song files. Restart Wheel Wizard if it's open.");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -2030,17 +2506,23 @@ public sealed class MainForm : Form
             SetStatus("Add a song to at least one track first.");
             return;
         }
-        var modsFolders = PackBuilder.ModsFolders();
         ExportChoice choice;
-        using (var form = new ExportForm(modsFolders.Count > 0))
+        using (var form = new ExportForm(Directory.Exists(_options.RetroRewindFolder), _settings.ExportForWii))
         {
             form.ShowDialog(this);
             choice = form.Choice;
+            if (choice != ExportChoice.None)
+            {
+                // Remembered, and used for this build: a pack for a Wii has its songs brought down to what the console plays.
+                _options.TargetWii = form.ForWii;
+                _settings.ExportForWii = form.ForWii;
+                AppStorage.SaveSettings(_settings);
+            }
         }
 
-        if (choice == ExportChoice.WheelWizard)
+        if (choice == ExportChoice.Game)
         {
-            await AddToWheelWizardAsync();
+            await AddToPatchesAsync();
         }
         else if (choice == ExportChoice.Zip)
         {
@@ -2135,18 +2617,6 @@ public sealed class MainForm : Form
         }
     }
 
-    /// <summary>Adds the pack to Wheel Wizard's Mods list, which puts it in Patches when the game launches.</summary>
-    internal async Task AddToWheelWizardAsync()
-    {
-        _lastBuildMusicFolder = null;
-        await BuildPackAsync();
-        if (IsDisposed || _lastBuildMusicFolder == null)
-            return;
-        string? archive = await PrepareSoundArchiveAsync();
-        if (!IsDisposed)
-            InstallToPatches(archive, copyToPatches: false);
-    }
-
     internal async Task BuildPackAsync()
     {
         if (_rows.All(r => !r.IsAssigned))
@@ -2167,7 +2637,7 @@ public sealed class MainForm : Form
         }
         string output = _settings.OutputFolder.Length > 0 ? _settings.OutputFolder : AppStorage.DefaultOutputFolder;
         ReadNames();
-        _build.Enabled = false;
+        _export.Enabled = false;
         _export.Enabled = false;
         _progress.Fraction = 0;
         SetStatus("Building...");
@@ -2211,7 +2681,7 @@ public sealed class MainForm : Form
     private void FinishBuildButtons()
     {
         {
-            _build.Enabled = true;
+            _export.Enabled = true;
             _export.Enabled = true;
             _grid.Invalidate();
         }
@@ -2252,7 +2722,7 @@ public sealed class MainForm : Form
     {
         if (!_settings.BoostMusicSlots)
             return null;
-        _build.Enabled = false;
+        _export.Enabled = false;
         try
         {
             return await Task.Run(() => SoundArchive.Prepare(_settings, message => OnWindow(() => SetStatus(message))));
@@ -2267,17 +2737,17 @@ public sealed class MainForm : Form
         finally
         {
             if (!IsDisposed)
-                _build.Enabled = true;
+                _export.Enabled = true;
         }
     }
 
-    private void InstallToPatches(string? archive = null, bool copyToPatches = true)
+    private void InstallToPatches(string? archive = null)
     {
         if (_lastBuildMusicFolder == null)
             return;
         if (!Directory.Exists(_options.RetroRewindFolder))
         {
-            SetStatus("Adding to Patches needs your Retro Rewind folder. Set it in Settings, or use Export pack instead.");
+            SetStatus("Adding to the game needs your Retro Rewind folder. Set it in Settings, or use Export pack instead.");
             return;
         }
         var modsFolders = PackBuilder.ModsFolders();
@@ -2306,19 +2776,7 @@ public sealed class MainForm : Form
                         keep = loose;
                 }
             }
-            else
-            {
-                var conflicts = PackBuilder.PatchesConflicts(_lastBuildMusicFolder, _options.RetroRewindFolder);
-                if (conflicts.Count > 0)
-                {
-                    string names = string.Join("\r\n", conflicts.Take(10));
-                    var answer = MessageBox.Show(this,
-                        $"These {conflicts.Count} files in Patches are different and would be replaced:\r\n\r\n{names}\r\n\r\nReplace them?",
-                        "Replace files in Patches", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-                    if (answer != DialogResult.Yes)
-                        return;
-                }
-            }
+
 
             foreach (string mods in modsFolders)
             {
@@ -2330,18 +2788,19 @@ public sealed class MainForm : Form
                     WriteLog($"This pack now plays over the same songs in: {string.Join(", ", shared)}.");
             }
             int count = songs.Length;
-            if (copyToPatches)
             {
-                PackBuilder.CopyToPatches(_lastBuildMusicFolder, _options.RetroRewindFolder);
+                // The songs go in Retro Rewind's strm folder. Its own songs are saved first, so removing the pack restores them.
+                PackBuilder.CopyToStrm(_lastBuildMusicFolder, _options.RetroRewindFolder, PackBuilder.StrmBackupFolder(OutputFolder));
                 SoundArchive.Place(archive, _settings.BoostMusicSlots, Path.Combine(_options.RetroRewindFolder, "Patches"));
             }
 
             ScanInstalled();
             _grid.Invalidate();
-            WriteLog($"Patches: {Path.Combine(_options.RetroRewindFolder, "Patches")}");
+            WriteLog($"strm: {PackBuilder.StrmFolder(_options.RetroRewindFolder)}");
+            WriteLog($"Retro Rewind's own songs that were replaced are saved in {PackBuilder.StrmBackupFolder(OutputFolder)}.");
             SetStatus(wheelWizard
-                ? copyToPatches ? $"Done. Added {count} files to Patches. Restart Wheel Wizard." : $"Done. Added {count} files to Wheel Wizard. Restart it to see the pack in Mods."
-                : $"Done. Added {count} files to Patches.");
+                ? $"Done. Added {count} files to the strm folder. Restart Wheel Wizard."
+                : $"Done. Added {count} files to the strm folder.");
 
             // The banner is gone, so a setting that would silence the pack still needs saying once it matters.
             var issues = SetupCheck.Run(_options.RetroRewindFolder).Where(issue => !issue.StartsWith("Dolphin", StringComparison.Ordinal)).ToList();
@@ -2393,6 +2852,9 @@ public sealed class MainForm : Form
             _grid.Rows[index].Selected = true;
     }
 
+    internal int VisibleIndexForTest(TrackRow row) => _visible.IndexOf(row);
+    internal IReadOnlyList<TrackRow> VisibleRowsForTest => _visible;
+    internal IEnumerable<string> SidebarNamesForTest => _sidebar.Items.Cast<SideList.Item>().Select(item => item.Name);
     internal void SaveForTest() => SaveNow();
     internal void RunChecksForTest() => RunChecks(force: true);
     internal string StatusOfForTest(TrackRow row) => StatusOf(row);
@@ -2403,7 +2865,6 @@ public sealed class MainForm : Form
     internal Task UpdateSizeForTest() => UpdateSizeAsync();
     internal string StatusTextForTest => _status.Text;
     internal string? ExportedFolderForTest => _lastExportFolder;
-    internal string ActionButtonTextForTest => _build.Text;
     internal string ExportButtonTextForTest => _export.Text;
     internal bool ShowPackButtonVisibleForTest => _openFolder.Visible;
     internal ComboBox SpeedComboForTest => _speed;
@@ -2429,9 +2890,21 @@ public sealed class MainForm : Form
     internal Control PackNameBoxForTest => _packName.Box;
     internal bool LogVisibleForTest => _logPanel.Visible;
     internal string LogTextForTest => _log.Text;
-    internal IEnumerable<string> FooterButtonsForTest => _build.Parent!.Controls.Cast<Control>().Select(c => c.Text);
+    internal IEnumerable<string> FooterButtonsForTest => _export.Parent!.Controls.Cast<Control>().Select(c => c.Text);
     internal ComboBox ManySpeedComboForTest => _manySpeed;
+    internal ComboBox VolumeComboForTest => _volume;
+    internal void NudgeVolumeForTest(int step) => _nudgeButtons[step > 0 ? 0 : 1].PerformClick();
+    internal void RefreshDetailsForTest() => ShowDetails();
     internal ComboBox FinalSpeedComboForTest => _finalSpeed;
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal bool? ConfirmRemoveForTest { get; set; }
+    internal bool RemoveFromGameVisibleForTest => _removeFromGame.Visible;
+    internal void ClickRemoveFromGameForTest() => RemovePackFromGame();
+    internal string HearFinalTextForTest => _hearFinal.Text;
+    internal ComboBox FinalVolumeComboForTest => _finalVolume;
+    internal ComboBox FinalSongSpeedComboForTest => _finalSongSpeed;
+    internal bool FinalSongSettingsVisibleForTest => _finalVolume.Visible && _finalSongSpeed.Visible;
     internal ComboBox ManyFinalSpeedComboForTest => _manyFinalSpeed;
     internal void PickSidebarIndexForTest(int index) => _sidebar.SelectedIndex = index;
     internal object? SidebarSelectionForTest => _sidebar.SelectedItem;
@@ -2496,8 +2969,6 @@ public sealed class SettingsForm : Form
     private readonly AppSettings _settings;
     private readonly FieldBox _rrFolder = new("Not needed. The built-in list is used.") { Width = 280 };
     private readonly FieldBox _output = new() { Width = 280 };
-    private readonly FieldBox _mods = new("Found automatically") { Width = 280 };
-    private readonly FlatCheck _useWheelWizard = new() { Text = "Add packs to Wheel Wizard", AutoSize = true };
     private readonly FlatCheck _raceBoost = new() { Text = "Make race music louder", AutoSize = true };
     private readonly ComboBox _rate = new FlatCombo { Width = 200 };
     private readonly ComboBox _loudness = new FlatCombo { Width = 200 };
@@ -2623,14 +3094,8 @@ public sealed class SettingsForm : Form
         Heading("Folders");
         _rrFolder.Box.ReadOnly = true;
         _rrFolder.Box.Text = options.RetroRewindFolder;
-        Add("Retro Rewind", _rrFolder, "Only needed for Add to Patches, or if your Retro Rewind is newer than the app's track list.",
+        Add("Retro Rewind", _rrFolder, "Only needed for Add to strm, or if your Retro Rewind is newer than the app's track list.",
             Browse(_rrFolder, "Pick the RetroRewind6 folder"), Clear(_rrFolder));
-        _mods.Box.ReadOnly = true;
-        _mods.Box.Text = settings.ModsFolder;
-        Add("Wheel Wizard", _mods, "Wheel Wizard's Mods folder. It's found by itself unless you set one here.",
-            Browse(_mods, "Pick Wheel Wizard's Mods folder"), Clear(_mods));
-        _useWheelWizard.Checked = settings.UseWheelWizard;
-        Check(_useWheelWizard);
         _output.Box.ReadOnly = true;
         _output.Box.Text = settings.OutputFolder.Length > 0 ? settings.OutputFolder : AppStorage.DefaultOutputFolder;
         Add("Save to", _output, "Where packs and downloaded songs go.", Browse(_output, "Where should packs and downloads go?"));
@@ -2774,8 +3239,6 @@ public sealed class SettingsForm : Form
     {
         FolderChanged = _rrFolder.Box.Text != _options.RetroRewindFolder;
         _options.RetroRewindFolder = _rrFolder.Box.Text;
-        _settings.ModsFolder = _mods.Box.Text;
-        _settings.UseWheelWizard = _useWheelWizard.Checked;
         _options.RaceBoost = _raceBoost.Checked;
         _settings.OutputFolder = _output.Box.Text == AppStorage.DefaultOutputFolder ? "" : _output.Box.Text;
         _options.SampleRate = (int)(_rate.SelectedItem ?? 32000);
