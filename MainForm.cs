@@ -65,6 +65,9 @@ public sealed class MainForm : Form
     private readonly ComboBox _manyVolume = new FlatCombo { Width = 310, Margin = new Padding(0, 0, 0, 4), MaxDropDownItems = 14 };
     private readonly ComboBox _manySpeed = new FlatCombo { Width = 310, Margin = new Padding(0, 0, 0, 8), MaxDropDownItems = 14 };
     private readonly ComboBox _manySongPick = new FlatCombo { Width = 310, Margin = new Padding(0, 0, 0, 8), MaxDropDownItems = 14 };
+    private readonly ComboBox _fillOrder = new FlatCombo { Width = 310, Margin = new Padding(0, 0, 0, 6) };
+    private readonly FlatCheck _fillEmptyOnly = new() { Text = "Only tracks without a song", AutoSize = true, Margin = new Padding(0, 0, 0, 8) };
+    private bool _bulkSelecting;
     private readonly ComboBox _songPick = new FlatCombo { Dock = DockStyle.Top, Margin = new Padding(0, 8, 0, 0), MaxDropDownItems = 14 };
     private readonly SongLibrary _library;
     private List<string> _songPaths = [];
@@ -313,6 +316,7 @@ public sealed class MainForm : Form
         gridHolder.Controls.Add(_grid);
         centerCard.Controls.Add(gridHolder);
         centerCard.Controls.Add(_chips);
+        centerCard.Controls.Add(BuildSelectRow());
         centerCard.Controls.Add(searchRow);
         ConfigureGrid();
 
@@ -741,7 +745,14 @@ public sealed class MainForm : Form
         _many.Controls.Add(_manySongPick);
         _manySongPick.SelectedIndexChanged += (_, _) => PickSong(_manySongPick.SelectedIndex);
         _many.Controls.Add(Wide("Find a song online", "", GetFromWeb));
+        _many.Controls.Add(new Label { Text = "Give each selected track a song from a batch", AutoSize = true, Tag = Theme.MutedTag, Margin = new Padding(0, 8, 0, 3) });
         _many.Controls.Add(Wide("Fill from a folder of songs", "", FillFromFolder));
+        _many.Controls.Add(Wide("Fill from songs I pick", "", FillFromPicked));
+        _many.Controls.Add(Wide("Match song names to tracks", "", MatchPickedToSelected));
+        _fillOrder.Items.AddRange(["Shuffled", "In order, by file name"]);
+        _fillOrder.SelectedIndex = 0;
+        _many.Controls.Add(_fillOrder);
+        _many.Controls.Add(_fillEmptyOnly);
         _many.Controls.Add(Wide("Remove songs", "", () => ClearSongs(SelectedRows())));
 
         void Bulk(string caption, ComboBox combo)
@@ -808,7 +819,7 @@ public sealed class MainForm : Form
         };
         _many.Controls.Add(new Label
         {
-            Text = "Fill shuffles the folder's songs across these tracks, and reuses songs if there are fewer songs than tracks.",
+            Text = "Fill hands the songs out one per track and starts again if there are fewer songs than tracks. Matching looks for the track's name in each file name.",
             AutoSize = true,
             MaximumSize = new Size(310, 0),
             Tag = Theme.MutedTag,
@@ -1108,6 +1119,8 @@ public sealed class MainForm : Form
         {
             // Closing the window clears the list, and the details panel is already being destroyed by then.
             if (Disposing || IsDisposed)
+                return;
+            if (_bulkSelecting)
                 return;
             var rows = SelectedRows();
             _selected = rows.Count > 0 ? rows[0] : null;
@@ -1535,6 +1548,7 @@ public sealed class MainForm : Form
         to.Loudness = from.Loudness;
         to.MultiChannelSlots = from.MultiChannelSlots;
         to.StockFinalLapFiles = from.StockFinalLapFiles;
+        to.OriginalNames = from.OriginalNames;
     }
 
     private void ReloadCatalog(Project? project)
@@ -1939,22 +1953,103 @@ public sealed class MainForm : Form
         RefreshAfterChange();
     }
 
+    /// <summary>The tracks a fill goes to, in the order they're listed, so "in order" follows the list.</summary>
+    private List<TrackRow> FillTargets() =>
+        SelectedRows().OrderBy(row => _visible.IndexOf(row)).ToList();
+
     private void FillFromFolder()
     {
-        var targets = SelectedRows();
         using var dialog = new FolderBrowserDialog { Description = "Pick a folder of songs", UseDescriptionForTitle = true };
         if (dialog.ShowDialog(this) != DialogResult.OK)
             return;
         var files = Directory.GetFiles(dialog.SelectedPath, "*", SearchOption.AllDirectories).Where(PackBuilder.IsAudioFile).ToList();
+        FillSelected(files, "That folder has no songs.");
+    }
+
+    private void FillFromPicked()
+    {
+        using var dialog = new OpenFileDialog { Filter = AudioFilter, Multiselect = true, Title = "Pick the songs to hand out" };
+        if (dialog.ShowDialog(this) == DialogResult.OK)
+            FillSelected(dialog.FileNames.Where(PackBuilder.IsAudioFile).ToList(), "None of those are songs.");
+    }
+
+    /// <summary>Hands the songs out to the selected tracks, in the order and for the tracks the options say.</summary>
+    internal void FillSelected(List<string> files, string noSongsMessage)
+    {
         if (files.Count == 0)
         {
-            SetStatus("That folder has no songs.");
+            SetStatus(noSongsMessage);
+            return;
+        }
+        var targets = FillTargets();
+        var order = _fillOrder.SelectedIndex == 1 ? FillOrder.InOrder : FillOrder.Shuffled;
+        bool onlyEmpty = _fillEmptyOnly.Checked;
+        if (onlyEmpty && targets.All(row => row.IsAssigned))
+        {
+            SetStatus("Every selected track already has a song.");
             return;
         }
         _library.Add(files);
-        PackBuilder.FillFromFolder(files, targets, Random.Shared);
-        SetStatus($"Spread {files.Count} songs across {targets.Count} tracks.");
+        int filled = PackBuilder.FillFromFiles(files, targets, order, onlyEmpty, Random.Shared);
+        SetStatus($"Gave {filled} {(filled == 1 ? "track" : "tracks")} a song from {files.Count}.");
         RefreshAfterChange();
+    }
+
+    /// <summary>Picks songs and gives each to the selected track whose name is in its file name.</summary>
+    private void MatchPickedToSelected()
+    {
+        using var dialog = new OpenFileDialog { Filter = AudioFilter, Multiselect = true, Title = "Pick songs named after their tracks" };
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+            return;
+        var files = dialog.FileNames.Where(PackBuilder.IsAudioFile).ToList();
+        var targets = FillTargets();
+        if (_fillEmptyOnly.Checked)
+            targets = targets.Where(row => !row.IsAssigned).ToList();
+        _library.Add(files);
+        var (matched, unmatched) = PackBuilder.AutoMatch(files, targets);
+        SetStatus($"Matched {matched} of {files.Count} songs to the selected tracks.");
+        foreach (string name in unmatched)
+            WriteLog($"No selected track matches: {name}.");
+        RefreshAfterChange();
+    }
+
+    /// <summary>Quick ways to pick many tracks at once, for the batch tools on the right.</summary>
+    private Control BuildSelectRow()
+    {
+        var row = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 34, WrapContents = false, Padding = new Padding(2, 0, 2, 6) };
+        row.Controls.Add(new Label { Text = "Select", AutoSize = true, Tag = Theme.MutedTag, Margin = new Padding(4, 6, 8, 0) });
+        foreach (var (text, pick) in new (string, Func<TrackRow, bool>)[]
+        {
+            ("All", _ => true),
+            ("Without a song", r => !r.IsAssigned),
+            ("With a song", r => r.IsAssigned),
+        })
+        {
+            var button = new ModernButton { Text = text, AutoSize = true, Height = 26, Margin = new Padding(0, 0, 6, 0) };
+            button.Click += (_, _) => SelectTracks(pick);
+            row.Controls.Add(button);
+        }
+        return row;
+    }
+
+    /// <summary>Selects every listed track the test accepts. The details panel updates once at the end, not for each track.</summary>
+    internal void SelectTracks(Func<TrackRow, bool> pick)
+    {
+        _bulkSelecting = true;
+        try
+        {
+            _grid.ClearSelection();
+            for (int i = 0; i < _visible.Count; i++)
+                if (pick(_visible[i]))
+                    _grid.Rows[i].Selected = true;
+        }
+        finally
+        {
+            _bulkSelecting = false;
+        }
+        var rows = SelectedRows();
+        _selected = rows.Count > 0 ? rows[0] : null;
+        ShowDetails();
     }
 
     private void ChooseFinal()
@@ -2553,12 +2648,11 @@ public sealed class MainForm : Form
                 return;
 
             ReadNames();
-            string target = Path.Combine(dialog.SelectedPath, PackBuilder.SafeName(_options.PackName));
-            if (Directory.Exists(target) && Directory.EnumerateFileSystemEntries(target).Any())
+            if (Directory.EnumerateFiles(dialog.SelectedPath, "*.brstm").Any())
             {
                 var answer = MessageBox.Show(this,
-                    $"There's already a folder named \"{Path.GetFileName(target)}\" there.\r\n\r\nDo you want to update it? Its songs in RetroRewind6\\Patches will be replaced, and other files stay.",
-                    "Update folder", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                    "That folder already has songs in it.\r\n\r\nSongs with the same names will be replaced. Other files stay.\r\n\r\nDo you want to go on?",
+                    "Songs already there", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
                 if (answer != DialogResult.Yes)
                     return;
             }
@@ -2568,7 +2662,7 @@ public sealed class MainForm : Form
         }
     }
 
-    /// <summary>Builds the songs and copies the pack to a folder. The game isn't touched.</summary>
+    /// <summary>Builds the songs and copies them straight into a folder. The game isn't touched.</summary>
     internal async Task ExportToFolderAsync(string destination)
     {
         _lastBuildMusicFolder = null;
@@ -2974,6 +3068,7 @@ public sealed class SettingsForm : Form
     private readonly ComboBox _loudness = new FlatCombo { Width = 200 };
     private readonly FlatCheck _multi = new() { Text = "Multi-channel stock slots", AutoSize = true };
     private readonly FlatCheck _final = new() { Text = "Write stock final lap files (_f)", AutoSize = true };
+    private readonly FlatCheck _original = new() { Text = "Original file names for the 32 original tracks", AutoSize = true };
     private readonly FlatCheck _updates = new() { Text = "Tell me when a new version is out", AutoSize = true };
     private readonly FlatCheck _boost = new() { Text = "Raise music volume in revo_kart.brsar", AutoSize = true };
     private readonly FieldBox _game = new("Only to raise the volume") { Width = 280 };
@@ -3141,10 +3236,12 @@ public sealed class SettingsForm : Form
         _raceBoost.Checked = options.RaceBoost;
         _multi.Checked = options.MultiChannelSlots;
         _final.Checked = options.StockFinalLapFiles;
+        _original.Checked = options.OriginalNames;
         Check(_boost, "Raises the music volumes in your own copy of revo_kart.brsar, made from your game file.");
         Check(_raceBoost, "The game's race mix is quiet, so race songs are made a little louder.");
         Check(_multi, "Only for CTGP or other mods. Retro Rewind doesn't need it.");
         Check(_final);
+        Check(_original, "For CTGP or the original game: the 32 original tracks also get their own names, like n_Farm_n. Retro Rewind doesn't use them.");
 
         Heading("Other");
         _updates.Checked = settings.CheckForUpdates;
@@ -3245,6 +3342,7 @@ public sealed class SettingsForm : Form
         _options.Loudness = _loudness.SelectedItem?.ToString() ?? Options.LoudnessEven;
         _options.MultiChannelSlots = _multi.Checked;
         _options.StockFinalLapFiles = _final.Checked;
+        _options.OriginalNames = _original.Checked;
         if (_game.Box.Text != _settings.GameFile)
             SoundArchive.ClearCache();
         _settings.GameFile = _game.Box.Text;

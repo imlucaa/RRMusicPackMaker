@@ -120,6 +120,27 @@ public static class AudioIO
         return null;
     }
 
+    /// <summary>
+    /// A song's length in seconds when its header says so, without starting ffprobe (about 50 ms each, which adds up over
+    /// hundreds of songs). Only BRSTM files qualify; anything else returns null and needs <see cref="Probe"/>.
+    /// </summary>
+    public static double? QuickLength(string path)
+    {
+        if (!path.EndsWith(".brstm", StringComparison.OrdinalIgnoreCase))
+            return null;
+        using var file = File.OpenRead(path);
+        var header = new byte[0x100];
+        if (file.Read(header, 0, header.Length) < 0x90 || Encoding.ASCII.GetString(header, 0, 4) != "RSTM")
+            return null;
+        int head = BigInt(header, 0x10);
+        int info = head + 8 + BigInt(header, head + 0x0C);
+        if (info < 0 || info + 16 > header.Length)
+            return null;
+        int rate = (header[info + 4] << 8) | header[info + 5];
+        long samples = (uint)BigInt(header, info + 12);
+        return rate > 0 && samples > 0 ? (double)samples / rate : null;
+    }
+
     private static (long?, long?) ReadBrstmLoop(string path)
     {
         using var file = File.OpenRead(path);

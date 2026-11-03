@@ -27,9 +27,11 @@ A Windows app for making custom music packs for [Retro Rewind](https://mkwiiki.o
 - A clean black look like a desktop music player, with your own background color, accent color or background picture, and an app size from 75% to 200%
 - A short description of where each menu song and fanfare plays
 - Autosave, and rebuilds that only re-encode what changed
-- Export for a Wii or for Dolphin. For a Wii, songs above 44100 Hz are converted down. Save the pack as a folder or zip, or add it to the game, which replaces the songs in Retro Rewind's strm folder and saves the originals so Remove from game can put them back
+- Export for a Wii or for Dolphin. For a Wii, songs above 44100 Hz are converted down. Save the songs as a zip or straight into a folder, with no folders around them, or add the pack to the game, which replaces the songs in Retro Rewind's strm folder and saves the originals so Remove from game can put them back
 - Even volume across songs, louder on race tracks because the game's race mix turns music down, with clean per-song boost or cut
-- The exported folder has install steps and credits inside, for real Wii, Dolphin or sharing
+- A zip export has the songs at the top, plus the credits list so friends who import it see song names
+- Batch tools for many tracks at once: select all, tracks without a song or tracks with one, then fill them from a folder or from songs you pick, shuffled or in order, only the empty ones if you like, or match song names to tracks
+- An option for CTGP and the original game: the 32 original tracks also get their original file names, like `n_Farm_n`, with final lap files
 
 ## Requirements
 
@@ -73,11 +75,11 @@ dotnet test Tests
 4. Click **Add to Patches** to play it yourself. This copies the songs to `RetroRewind6/Patches`, and adds them as a mod if you have Wheel Wizard or Wheel Wizard+, so they show in Mods and stay in `Patches`.
 5. Restart Wheel Wizard if it's open.
 
-**Real Wii, Dolphin or sharing:** click **Export pack**, then **Choose folder** or **Save as zip**, and pick where the pack goes. It comes with a README that explains how to install it. On a real Wii, its `RetroRewind6` folder goes on the root of the SD card.
+**Real Wii, Dolphin or sharing:** click **Export pack**, then **Choose folder** or **Save as zip**. The songs go straight into the folder you pick, or at the top of the zip, with no folders around them. Songs with the same name in that folder are replaced, and nothing else there is touched. On a real Wii, copy the songs into `SD:/RetroRewind6/Patches`.
 
 **Export pack** can also add the pack to Wheel Wizard's Mods list, without copying anything to `Patches` until you launch the game.
 
-**Real Wii with nothing else on your PC:** you don't need Retro Rewind, Wheel Wizard or an ISO. Click **Export pack**, then **Choose folder**, and copy the `RetroRewind6` folder it makes to the root of your SD card. Songs end up in `SD:/RetroRewind6/Patches`, which Retro Rewind loads without My Stuff. The ISO is only used for the optional volume raise.
+**Real Wii with nothing else on your PC:** you don't need Retro Rewind, Wheel Wizard or an ISO. Click **Export pack**, then **Choose folder**, and copy the songs it makes into `SD:/RetroRewind6/Patches` on your SD card. Retro Rewind loads that folder without My Stuff. The ISO is only used for the optional volume raise.
 
 **No sound in game?** Check that the Music setting in Retro Rewind isn't set to disable music.
 
@@ -99,3 +101,5 @@ This is a fan project, and it isn't affiliated with Nintendo or the Retro Rewind
 - [FFmpeg](https://ffmpeg.org/) for decoding audio
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) for online songs
 - [Pulsar](https://github.com/Retro-Rewind-Team/Pulsar) source, used as the reference for how Retro Rewind loads music
+
+**CTGP or the original game:** turn on **Original file names for the 32 original tracks** in Settings. The export then also has the stock names, like `n_Farm_n.brstm` and `n_Farm_f.brstm`. Copy them to `My Stuff/sound/strm` on your SD card for CTGP, or into the disc image's `sound/strm`. Luigi Circuit and Mario Circuit share one file in the original game. Retro Rewind ignores these files.

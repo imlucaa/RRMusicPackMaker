@@ -233,19 +233,20 @@ public sealed class SongsPanel : Panel
             _lengths[song] = 0;
         var found = await Task.Run(() =>
         {
-            var lengths = new Dictionary<string, double>();
-            foreach (string song in unknown)
+            var lengths = new System.Collections.Concurrent.ConcurrentDictionary<string, double>();
+            // Headers are read directly. Only other formats need ffprobe, so a few run side by side but never a swarm.
+            Parallel.ForEach(unknown, new ParallelOptions { MaxDegreeOfParallelism = 4 }, song =>
             {
                 try
                 {
-                    lengths[song] = AudioIO.Probe(song).Duration;
+                    lengths[song] = AudioIO.QuickLength(song) ?? AudioIO.Probe(song).Duration;
                 }
                 catch (Exception ex) when (ex is InvalidDataException or FileNotFoundException or IOException or InvalidOperationException or System.ComponentModel.Win32Exception)
                 {
                     // The length is only a nicety, so a song that can't be read just doesn't show one.
                 }
-            }
-            return lengths;
+            });
+            return lengths.ToDictionary(pair => pair.Key, pair => pair.Value);
         });
         if (IsDisposed)
             return;

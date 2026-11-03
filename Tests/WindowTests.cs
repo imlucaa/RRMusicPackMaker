@@ -674,6 +674,31 @@ public class WindowTests : IDisposable
     });
 
     [Fact]
+    public void SelectTracks_PicksTracksWithOrWithoutASong_AndNone() => OnUiThread(() =>
+    {
+        var (form, _) = WindowWithSong();
+        using (form)
+        {
+            form.SelectTracks(row => row.IsAssigned);
+            var withSong = form.SelectedRows();
+            Assert.NotEmpty(withSong);
+            Assert.All(withSong, row => Assert.True(row.IsAssigned));
+
+            form.SelectTracks(row => !row.IsAssigned);
+            var without = form.SelectedRows();
+            Assert.True(without.Count > 1);
+            Assert.All(without, row => Assert.False(row.IsAssigned));
+
+            form.SelectTracks(_ => true);
+            Assert.Equal(withSong.Count + without.Count, form.SelectedRows().Count);
+
+            form.SelectTracks(_ => false);
+            Assert.Empty(form.SelectedRows());
+            form.Close();
+        }
+    });
+
+    [Fact]
     public void ExportToFolder_MakesACompleteFolder_WithoutTouchingTheGame() => OnUiThread(() =>
     {
         var (form, file) = WindowWithSong();
@@ -689,14 +714,12 @@ public class WindowTests : IDisposable
             Assert.False(Directory.Exists(Path.Combine(_data, "rr", "Patches")));
             Assert.False(Directory.Exists(Path.Combine(_data, "ww", "Mods", "My Music Pack")));
 
+            // The songs go straight into the chosen folder, with no pack folder and no RetroRewind6/Patches around them.
             string target = form.ExportedFolderForTest!;
-            Assert.Equal(Path.Combine(destination, "My Music Pack"), target);
-            Assert.True(File.Exists(Path.Combine(target, "RetroRewind6", "Patches", file)));
-            Assert.True(File.Exists(Path.Combine(target, "credits.csv")));
+            Assert.Equal(destination, target);
+            Assert.True(File.Exists(Path.Combine(target, file)));
+            Assert.Empty(Directory.GetDirectories(target));
             Assert.Empty(Directory.GetFiles(target, "*.brsar", SearchOption.AllDirectories));
-            string readme = File.ReadAllText(Path.Combine(target, "README.txt"));
-            Assert.Contains("SD:/RetroRewind6/Patches", readme);
-            Assert.Contains("Wheel Wizard", readme);
             form.Close();
         }
     });
@@ -1094,8 +1117,9 @@ public class WindowTests : IDisposable
             using (var archive = System.IO.Compression.ZipFile.OpenRead(zip))
             {
                 var names = archive.Entries.Select(entry => entry.FullName.Replace('\\', '/')).ToList();
-                Assert.Contains($"RetroRewind6/Patches/{file}", names);
-                Assert.Contains("README.txt", names);
+                Assert.Contains(file, names);
+                Assert.Contains("credits.csv", names);
+                Assert.DoesNotContain(names, name => name.Contains('/'));
                 Assert.DoesNotContain(names, name => name.EndsWith(".brsar"));
             }
             Assert.False(Directory.Exists(Path.Combine(_data, "rr", "Patches")));
