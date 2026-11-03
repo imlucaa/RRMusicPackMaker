@@ -378,7 +378,7 @@ public sealed class SongRows : ListBox
     {
         DrawMode = DrawMode.OwnerDrawFixed;
         BorderStyle = BorderStyle.None;
-        ItemHeight = 52;
+        ItemHeight = Theme.Px(52);
         IntegralHeight = false;
     }
 

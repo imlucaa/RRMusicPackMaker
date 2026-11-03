@@ -37,8 +37,6 @@ public sealed class MainForm : Form
     private readonly ModernButton _build = new() { Text = "Add to Patches", Tag = Theme.AccentTag, AutoSize = true, Height = 28, Padding = new Padding(10, 0, 10, 0), Margin = new Padding(6, 0, 0, 0) };
     private readonly ModernButton _openFolder = Footer("Show exported pack");
     private readonly ModernButton _updateButton = Footer("Update available");
-    private readonly ModernButton _previewPause = Footer("❚❚  Pause");
-    private readonly ModernButton _previewStop = Footer("■  Stop");
     private readonly ModernButton _tabTracks = Tab("Tracks");
     private readonly ModernButton _tabEditor = Tab("Editor");
     private readonly ModernButton _tabSongs = Tab("Songs");
@@ -103,6 +101,9 @@ public sealed class MainForm : Form
     private readonly Label _finalLabel = new() { AutoSize = true, MaximumSize = new Size(310, 0), Tag = Theme.MutedTag, Margin = new Padding(0, 0, 0, 6) };
     private readonly ModernButton _finalChoose = new() { Text = "Choose", Height = 28, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 4, 0) };
     private readonly ModernButton _finalRemove = new() { Text = "Remove", Height = 28, Dock = DockStyle.Fill, Margin = new Padding(4, 0, 0, 0) };
+    private readonly Label _finalSpeedCaption = new() { Text = "Final lap speed", AutoSize = true, Tag = Theme.MutedTag, Margin = new Padding(0, 8, 0, 3) };
+    private readonly ComboBox _finalSpeed = new FlatCombo { Dock = DockStyle.Top, Margin = new Padding(0, 0, 0, 4) };
+    private readonly ComboBox _manyFinalSpeed = new FlatCombo { Width = 310, Margin = new Padding(0, 0, 0, 8) };
 
     private readonly List<Control> _songOnly = [];
 
@@ -122,7 +123,9 @@ public sealed class MainForm : Form
         _library = new SongLibrary(() => DownloadFolder);
 
         BuildLayout();
+        LoadBackdrop();
         ApplyTheme();
+        SizeChanged += (_, _) => SizeBackdrop();
 
         _options.RetroRewindFolder = Catalog.DetectRetroRewind() ?? "";
         _autosave.Tick += (_, _) => SaveNow();
@@ -257,10 +260,8 @@ public sealed class MainForm : Form
         // Bottom bar.
         var footer = new Panel { Dock = DockStyle.Bottom, Height = 42 };
         var footerRight = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Padding = new Padding(0, 7, 10, 0) };
-        footerRight.Controls.AddRange([_build, _export, _importPack, _openFolder, _updateButton, _previewStop, _previewPause]);
+        footerRight.Controls.AddRange([_build, _export, _importPack, _openFolder, _updateButton]);
         _importPack.Click += async (_, _) => await PickPackToImportAsync();
-        _previewPause.Click += (_, _) => AudioPreview.TogglePause();
-        _previewStop.Click += (_, _) => AudioPreview.Stop();
         AudioPreview.Changed += ShowPreviewButtons;
         ShowPreviewButtons();
         _updateButton.Visible = false;
@@ -523,6 +524,8 @@ public sealed class MainForm : Form
         Wide(_finalCaption);
         Wide(_finalLabel);
         Pair(_finalChoose, _finalRemove);
+        Wide(_finalSpeedCaption);
+        Wide(_finalSpeed);
         Wide(_namesToggle);
         _songOnly.Add(_namesToggle);
         int beforeNames = _songOnly.Count;
@@ -543,6 +546,8 @@ public sealed class MainForm : Form
             _volume.Items.Add(db == 0 ? "Normal" : $"{db:+0;-0} dB");
         foreach (var choice in PackBuilder.SpeedChoices)
             _speed.Items.Add(choice.Text);
+        foreach (var (text, _) in PackBuilder.FinalSpeedChoices)
+            _finalSpeed.Items.Add(text);
 
         _songPick.SelectedIndexChanged += (_, _) => PickSong(_songPick.SelectedIndex);
         _choose.Click += (_, _) => ChooseSource();
@@ -578,6 +583,7 @@ public sealed class MainForm : Form
             ShowDetails();
             MarkDirty();
         };
+        _finalSpeed.SelectedIndexChanged += (_, _) => DetailChanged(r => r.FinalSpeed = PackBuilder.FinalSpeedChoices[Math.Max(0, _finalSpeed.SelectedIndex)].Speed);
         _song.Box.TextChanged += (_, _) => DetailChanged(r => r.Song = _song.Box.Text);
         _credits.Box.TextChanged += (_, _) => DetailChanged(r => r.Credits = _credits.Box.Text);
         _loopMode.SelectedIndexChanged += (_, _) => DetailChanged(r =>
@@ -645,6 +651,15 @@ public sealed class MainForm : Form
         Bulk("Smooth the jump", _manyFade);
         Bulk("Volume", _manyVolume);
         Bulk("Speed", _manySpeed);
+        _manyFinalSpeed.Items.Add(NoChange);
+        foreach (var (text, _) in PackBuilder.FinalSpeedChoices)
+            _manyFinalSpeed.Items.Add(text);
+        Bulk("Final lap speed", _manyFinalSpeed);
+        _manyFinalSpeed.SelectedIndexChanged += (_, _) =>
+        {
+            if (_manyFinalSpeed.SelectedIndex > 0 && !_loading)
+                ApplyToSelected(r => r.FinalSpeed = PackBuilder.FinalSpeedChoices[_manyFinalSpeed.SelectedIndex - 1].Speed);
+        };
         _manyLoop.SelectedIndexChanged += (_, _) =>
         {
             if (_manyLoop.SelectedIndex > 0)
@@ -700,6 +715,7 @@ public sealed class MainForm : Form
         _manyFade.SelectedIndex = rows.Select(r => r.Crossfade).Distinct().Count() == 1 ? PackBuilder.CrossfadeIndex(rows[0].Crossfade) + 1 : 0;
         _manyVolume.SelectedIndex = rows.Select(r => r.VolumeDb).Distinct().Count() == 1 ? PackBuilder.VolumeIndex(rows[0].VolumeDb) + 1 : 0;
         _manySpeed.SelectedIndex = rows.Select(r => PackBuilder.SpeedIndex(r.Speed, r.KeepPitch, r.Reverb)).Distinct().Count() == 1 ? PackBuilder.SpeedIndex(rows[0].Speed, rows[0].KeepPitch, rows[0].Reverb) + 1 : 0;
+        _manyFinalSpeed.SelectedIndex = rows.Select(r => r.FinalSpeed).Distinct().Count() == 1 ? PackBuilder.FinalSpeedIndex(rows[0].FinalSpeed) + 1 : 0;
         ShowPickedSong();
         _loading = wasLoading;
     }
@@ -790,14 +806,11 @@ public sealed class MainForm : Form
             _ = HearSongAsync();
     }
 
-    /// <summary>The Pause and Stop buttons show only while a track's music is playing.</summary>
+    /// <summary>The button that started a track's music turns into Pause and Resume while it plays. Esc stops it.</summary>
     private void ShowPreviewButtons()
     {
         bool active = AudioPreview.IsActive(this);
-        _previewPause.Visible = active;
-        _previewStop.Visible = active;
         string pauseText = AudioPreview.State == PreviewState.Paused ? "▶  Resume" : "❚❚  Pause";
-        _previewPause.Text = pauseText;
         _hearCurrent.Text = IsHearing(_hearCurrent) ? pauseText : _selected is { IsAssigned: true } ? HearSongText : HearCurrentText;
         _hearJump.Text = IsHearing(_hearJump) ? pauseText : HearJumpText;
         if (active)
@@ -885,8 +898,8 @@ public sealed class MainForm : Form
         _grid.ReadOnly = true;
         _grid.AllowDrop = true;
         _grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-        _grid.RowTemplate.Height = 24;
-        _grid.ColumnHeadersHeight = 24;
+        _grid.RowTemplate.Height = Theme.Px(24);
+        _grid.ColumnHeadersHeight = Theme.Px(24);
         _grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
         _grid.RowHeadersWidthSizeMode = DataGridViewRowHeadersWidthSizeMode.DisableResizing;
 
@@ -949,6 +962,13 @@ public sealed class MainForm : Form
             e.PaintParts = DataGridViewPaintParts.ContentForeground;
         };
         _grid.CellMouseEnter += (_, e) => SetHoverRow(e.RowIndex);
+
+        // Hovering a track's name shows what it is, like where a fanfare plays, without taking up room in the list.
+        _grid.CellToolTipTextNeeded += (_, e) =>
+        {
+            if (e.ColumnIndex == 0 && e.RowIndex >= 0 && e.RowIndex < _visible.Count)
+                e.ToolTipText = _visible[e.RowIndex].Note;
+        };
         _grid.MouseLeave += (_, _) => SetHoverRow(-1);
         _grid.SelectionChanged += (_, _) =>
         {
@@ -1072,11 +1092,65 @@ public sealed class MainForm : Form
         _ => "No loop",
     };
 
+    private Image? _backdropSource;
+
+    /// <summary>Loads the background picture, if one is set and can be read. A bad file just means plain black.</summary>
+    private void LoadBackdrop()
+    {
+        _backdropSource?.Dispose();
+        _backdropSource = null;
+        string path = Theme.BackgroundPath;
+        if (path.Length > 0 && File.Exists(path))
+        {
+            try
+            {
+                // Read into memory, so the picture's file isn't locked while the app is open.
+                using var stream = new MemoryStream(File.ReadAllBytes(path));
+                using var image = Image.FromStream(stream);
+                _backdropSource = new Bitmap(image);
+            }
+            catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException or OutOfMemoryException)
+            {
+                WriteLog($"Could not show the background picture. {ex.Message}");
+            }
+        }
+        SizeBackdrop();
+    }
+
+    /// <summary>Fills the window with the picture, cropped rather than stretched, and darkened so text stays readable.</summary>
+    private void SizeBackdrop()
+    {
+        var old = BackgroundImage;
+        if (_backdropSource == null || ClientSize.Width < 1 || ClientSize.Height < 1)
+        {
+            BackgroundImage = null;
+            old?.Dispose();
+            return;
+        }
+        var size = ClientSize;
+        var picture = new Bitmap(size.Width, size.Height);
+        using (var g = Graphics.FromImage(picture))
+        {
+            float scale = Math.Max((float)size.Width / _backdropSource.Width, (float)size.Height / _backdropSource.Height);
+            float width = _backdropSource.Width * scale, height = _backdropSource.Height * scale;
+            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+            g.DrawImage(_backdropSource, (size.Width - width) / 2, (size.Height - height) / 2, width, height);
+            using var shade = new SolidBrush(Color.FromArgb(140, Theme.Current.Window));
+            g.FillRectangle(shade, 0, 0, size.Width, size.Height);
+        }
+        BackgroundImageLayout = ImageLayout.None;
+        BackgroundImage = picture;
+        old?.Dispose();
+    }
+
+    internal bool HasBackdropForTest => BackgroundImage != null;
+    internal AppSettings SettingsForTest => _settings;
+
     private void ApplyTheme()
     {
-        Theme.Apply(this);
+        Theme.Apply(this, seeThrough: _backdropSource != null);
         _title.Font = _titleFont;
-        _sidebar.ItemHeight = 24;
+        _sidebar.ItemHeight = Theme.Px(24);
         _manyTitle.Font = _titleFont;
         _sidebar.Invalidate();
         _grid.Invalidate();
@@ -1268,7 +1342,7 @@ public sealed class MainForm : Form
             _seconds[r.Source] / r.Speed,
             r.FixedRate ?? _options.SampleRate,
             _options.MultiChannelSlots ? r.StockChannels : 2,
-            r.StockFinalBase != null && _options.StockFinalLapFiles));
+            (r.StockFinalBase != null && _options.StockFinalLapFiles) || PackBuilder.WritesPulsarFinal(r)));
         UpdateSummary();
     }
 
@@ -1346,9 +1420,10 @@ public sealed class MainForm : Form
         ShowPreviewButtons();
 
         bool canHaveFinal = row != null && (row.StockFinalBase != null || row.PulsarFinalBase != null);
-        foreach (Control control in new Control[] { _finalCaption, _finalLabel, _finalChoose, _finalRemove })
+        foreach (Control control in new Control[] { _finalCaption, _finalLabel, _finalChoose, _finalRemove, _finalSpeedCaption, _finalSpeed })
             control.Visible = canHaveFinal && has;
-        _finalLabel.Text = row?.FinalSource.Length > 0 ? Path.GetFileName(row.FinalSource) : "None. The game speeds up the normal song.";
+        _finalLabel.Text = row?.FinalSource.Length > 0 ? Path.GetFileName(row.FinalSource) : "None. The final lap plays this song, sped up.";
+        _finalSpeed.SelectedIndex = PackBuilder.FinalSpeedIndex(row?.FinalSpeed ?? PackBuilder.GameFinalSpeed);
         _finalRemove.Enabled = row?.FinalSource.Length > 0;
         _loading = wasLoading;
         UpdateThumb();
@@ -1829,10 +1904,19 @@ public sealed class MainForm : Form
 
     private void OpenSettings()
     {
+        int oldScale = _settings.UiScale;
         using var form = new SettingsForm(_options, _settings);
         if (form.ShowDialog(this) != DialogResult.OK)
             return;
         AppStorage.SaveSettings(_settings);
+        ApplyLook();
+        if (_settings.UiScale != oldScale && MessageBox.Show(this, "The new size shows once the app opens again. Restart it now?", "App size",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+        {
+            SaveNow();
+            Application.Restart();
+            return;
+        }
         if (form.FolderChanged)
         {
             var project = Project.From(_options, _rows);
@@ -1849,6 +1933,17 @@ public sealed class MainForm : Form
             OpenProject();
         if (form.WantsSave)
             SaveProject();
+    }
+
+    /// <summary>Shows a new accent color or background straight away.</summary>
+    internal void ApplyLook()
+    {
+        string oldBackground = Theme.BackgroundPath;
+        Theme.SetLook(_settings.AccentColor, _settings.BackgroundImage, _settings.BackgroundColor);
+        if (Theme.BackgroundPath != oldBackground)
+            LoadBackdrop();
+        ApplyTheme();
+        Invalidate(true);
     }
 
     private void RemovePackFromGame()
@@ -2326,10 +2421,8 @@ public sealed class MainForm : Form
     internal bool SongNameVisibleForTest => _song.Visible;
     internal void ToggleNamesForTest() => _namesToggle.PerformClick();
     internal bool PlayPreviewForTest(string file) => PlayPreview(file);
-    internal bool PreviewButtonsVisibleForTest => _previewPause.Visible && _previewStop.Visible;
-    internal string PreviewPauseTextForTest => _previewPause.Text;
-    internal void ClickPreviewPauseForTest() => _previewPause.PerformClick();
-    internal void ClickPreviewStopForTest() => _previewStop.PerformClick();
+    internal bool HasFooterButtonForTest(string text) => Controls.OfType<Panel>().SelectMany(panel => panel.Controls.OfType<FlowLayoutPanel>())
+        .SelectMany(row => row.Controls.OfType<ModernButton>()).Any(button => button.Text.Contains(text));
     internal ComboBox SongPickForTest => _songPick;
     internal ComboBox ManySongPickForTest => _manySongPick;
     internal void SetStatusForTest(string message) => SetStatus(message);
@@ -2338,6 +2431,8 @@ public sealed class MainForm : Form
     internal string LogTextForTest => _log.Text;
     internal IEnumerable<string> FooterButtonsForTest => _build.Parent!.Controls.Cast<Control>().Select(c => c.Text);
     internal ComboBox ManySpeedComboForTest => _manySpeed;
+    internal ComboBox FinalSpeedComboForTest => _finalSpeed;
+    internal ComboBox ManyFinalSpeedComboForTest => _manyFinalSpeed;
     internal void PickSidebarIndexForTest(int index) => _sidebar.SelectedIndex = index;
     internal object? SidebarSelectionForTest => _sidebar.SelectedItem;
     internal int SidebarCountForTest => _sidebar.Items.Count;
@@ -2399,18 +2494,22 @@ public sealed class SettingsForm : Form
 {
     private readonly Options _options;
     private readonly AppSettings _settings;
-    private readonly FieldBox _rrFolder = new("Not needed. The built-in track list is used.") { Width = 300 };
-    private readonly FieldBox _output = new() { Width = 300 };
-    private readonly FieldBox _mods = new("Found automatically") { Width = 300 };
+    private readonly FieldBox _rrFolder = new("Not needed. The built-in list is used.") { Width = 280 };
+    private readonly FieldBox _output = new() { Width = 280 };
+    private readonly FieldBox _mods = new("Found automatically") { Width = 280 };
     private readonly FlatCheck _useWheelWizard = new() { Text = "Add packs to Wheel Wizard", AutoSize = true };
-    private readonly FlatCheck _raceBoost = new() { Text = "Make race music louder (the game's race mix is quiet)", AutoSize = true };
+    private readonly FlatCheck _raceBoost = new() { Text = "Make race music louder", AutoSize = true };
     private readonly ComboBox _rate = new FlatCombo { Width = 200 };
     private readonly ComboBox _loudness = new FlatCombo { Width = 200 };
-    private readonly FlatCheck _multi = new() { Text = "Multi-channel stock slots (only for CTGP or other mods)", AutoSize = true };
+    private readonly FlatCheck _multi = new() { Text = "Multi-channel stock slots", AutoSize = true };
     private readonly FlatCheck _final = new() { Text = "Write stock final lap files (_f)", AutoSize = true };
     private readonly FlatCheck _updates = new() { Text = "Tell me when a new version is out", AutoSize = true };
-    private readonly FlatCheck _boost = new() { Text = "Raise music volume in revo_kart.brsar (made from your game file)", AutoSize = true };
-    private readonly FieldBox _game = new("Not needed unless you raise the volume") { Width = 300 };
+    private readonly FlatCheck _boost = new() { Text = "Raise music volume in revo_kart.brsar", AutoSize = true };
+    private readonly FieldBox _game = new("Only to raise the volume") { Width = 280 };
+    private readonly ComboBox _scale = new FlatCombo { Width = 200 };
+    private readonly FieldBox _background = new("None") { Width = 280 };
+    private string _accent = "";
+    private string _backColor = "";
 
     public bool FolderChanged { get; private set; }
     public bool WantsFfmpeg { get; private set; }
@@ -2427,79 +2526,114 @@ public sealed class SettingsForm : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        AutoSize = true;
-        AutoSizeMode = AutoSizeMode.GrowAndShrink;
         Font = Theme.UiFont();
+        var tips = new ToolTip();
+        Disposed += (_, _) => tips.Dispose();
 
-        var layout = new TableLayoutPanel { AutoSize = true, ColumnCount = 2, Padding = new Padding(16) };
+        // Each setting is one line: its name, the field, then its buttons. Longer explanations are tooltips,
+        // so the window stays short even at a big app size.
+        var layout = new TableLayoutPanel { AutoSize = true, Dock = DockStyle.Top, ColumnCount = 3, Padding = new Padding(14, 6, 14, 10) };
         int row = 0;
-        void Add(string caption, Control field, params Button[] buttons)
+        void Heading(string text)
         {
-            layout.Controls.Add(new Label { Text = caption, AutoSize = true, Tag = Theme.MutedTag, Margin = new Padding(0, 8, 0, 3) }, 0, row);
-            layout.SetColumnSpan(layout.GetControlFromPosition(0, row)!, 2);
+            var label = new Label { Text = text, AutoSize = true, Font = Theme.TitleFont(9.5f), Margin = new Padding(0, row == 0 ? 2 : 12, 0, 2) };
+            layout.Controls.Add(label, 0, row);
+            layout.SetColumnSpan(label, 3);
             row++;
-            layout.Controls.Add(field, 0, row);
+        }
+        void Add(string caption, Control field, string tip, params Button[] buttons)
+        {
+            var label = new Label { Text = caption, AutoSize = true, Tag = Theme.MutedTag, Anchor = AnchorStyles.Left, Margin = new Padding(0, 3, 12, 3) };
+            if (tip.Length > 0)
+            {
+                tips.SetToolTip(label, tip);
+                tips.SetToolTip(field, tip);
+            }
+            field.Margin = new Padding(0, 3, 0, 3);
+            layout.Controls.Add(label, 0, row);
+            layout.Controls.Add(field, 1, row);
             if (buttons.Length > 0)
             {
-                var holder = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };
+                var holder = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Anchor = AnchorStyles.Left, Margin = new Padding(0, 3, 0, 3) };
                 holder.Controls.AddRange(buttons);
-                layout.Controls.Add(holder, 1, row);
+                layout.Controls.Add(holder, 2, row);
             }
             row++;
         }
-        void Check(FlatCheck check, Padding margin)
+        void Check(FlatCheck check, string tip = "")
         {
-            check.Margin = margin;
-            layout.Controls.Add(check, 0, row++);
+            check.Margin = new Padding(0, 2, 0, 2);
+            if (tip.Length > 0)
+                tips.SetToolTip(check, tip);
+            layout.Controls.Add(check, 1, row);
             layout.SetColumnSpan(check, 2);
+            row++;
         }
 
-        var intro = new Label { Text = "All of this is optional. Packs still build if you leave these alone or turn them off.", AutoSize = true, Tag = Theme.MutedTag, Margin = new Padding(0, 0, 0, 6) };
-        layout.Controls.Add(intro, 0, row++);
-        layout.SetColumnSpan(intro, 2);
+        // A color row: a swatch showing the color, a button to pick another, and one to go back to the standard.
+        void AddColor(string caption, string tip, Func<string> get, Action<string> set, Color standard, string standardName)
+        {
+            var swatch = new Panel { Width = 280, Height = 28 };
+            swatch.Paint += (_, e) =>
+            {
+                var color = Theme.ParseColor(get()) ?? standard;
+                Theme.FillBox(e.Graphics, swatch.ClientRectangle, color, Theme.Current.Border);
+                TextRenderer.DrawText(e.Graphics, get().Length > 0 ? get().ToUpperInvariant() : standardName, Font, swatch.ClientRectangle,
+                    Theme.Luminance(color) > 0.18 ? Color.Black : Color.White, TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPrefix);
+            };
+            var pick = new ModernButton { Text = "Choose", AutoSize = true, Height = 28, Margin = new Padding(6, 0, 0, 0) };
+            pick.Click += (_, _) =>
+            {
+                using var dialog = new ColorDialog { Color = Theme.ParseColor(get()) ?? standard, FullOpen = true };
+                if (dialog.ShowDialog(this) == DialogResult.OK)
+                {
+                    set(Theme.ToHex(dialog.Color));
+                    swatch.Invalidate();
+                }
+            };
+            var reset = new ModernButton { Text = "Reset", AutoSize = true, Height = 28, Margin = new Padding(6, 0, 0, 0) };
+            reset.Click += (_, _) =>
+            {
+                set("");
+                swatch.Invalidate();
+            };
+            Add(caption, swatch, tip, pick, reset);
+        }
 
+        Heading("Look");
+        foreach (int percent in Theme.ScaleChoices)
+            _scale.Items.Add($"{percent}%");
+        _scale.SelectedIndex = Math.Max(0, Array.IndexOf(Theme.ScaleChoices, settings.UiScale) is var at && at >= 0 ? at : Array.IndexOf(Theme.ScaleChoices, 100));
+        Add("App size", _scale, "How big the app is drawn. It changes the next time the app opens.");
+        _accent = settings.AccentColor;
+        _backColor = settings.BackgroundColor;
+        AddColor("Background", "The color behind everything. Text turns dark on light colors.", () => _backColor, value => _backColor = value, Theme.Dark.Window, "Black (standard)");
+        AddColor("Accent", "Selected rows, status text and check boxes.", () => _accent, value => _accent = value, Theme.Dark.Accent, "Amber (standard)");
+        _background.Box.ReadOnly = true;
+        _background.Box.Text = settings.BackgroundImage;
+        var pickBackground = new ModernButton { Text = "Browse", AutoSize = true, Height = 28, Margin = new Padding(6, 0, 0, 0) };
+        pickBackground.Click += (_, _) =>
+        {
+            using var dialog = new OpenFileDialog { Title = "Pick a background picture", Filter = "Pictures|*.png;*.jpg;*.jpeg;*.bmp;*.gif|All files|*.*" };
+            if (dialog.ShowDialog(this) == DialogResult.OK)
+                _background.Box.Text = dialog.FileName;
+        };
+        Add("Picture", _background, "A picture behind the main window, darkened so text stays readable.", pickBackground, Clear(_background));
+
+        Heading("Folders");
         _rrFolder.Box.ReadOnly = true;
         _rrFolder.Box.Text = options.RetroRewindFolder;
-        _output.Box.ReadOnly = true;
-        _output.Box.Text = settings.OutputFolder.Length > 0 ? settings.OutputFolder : AppStorage.DefaultOutputFolder;
-        foreach (int rate in new[] { 32000, 24000, 22050, 16000 })
-            _rate.Items.Add(rate);
-        _rate.SelectedItem = options.SampleRate;
-        _loudness.Items.AddRange([Options.LoudnessEven, Options.LoudnessPeak, Options.LoudnessOff]);
-        _loudness.SelectedItem = options.Loudness;
-        _multi.Checked = options.MultiChannelSlots;
-        _final.Checked = options.StockFinalLapFiles;
-
-        Add("Retro Rewind folder (only needed for Add to Patches, or if your version is newer)", _rrFolder, Browse(_rrFolder, "Pick the RetroRewind6 folder"), Clear(_rrFolder));
+        Add("Retro Rewind", _rrFolder, "Only needed for Add to Patches, or if your Retro Rewind is newer than the app's track list.",
+            Browse(_rrFolder, "Pick the RetroRewind6 folder"), Clear(_rrFolder));
         _mods.Box.ReadOnly = true;
         _mods.Box.Text = settings.ModsFolder;
-        Add("Wheel Wizard Mods folder", _mods, Browse(_mods, "Pick Wheel Wizard's Mods folder"), Clear(_mods));
+        Add("Wheel Wizard", _mods, "Wheel Wizard's Mods folder. It's found by itself unless you set one here.",
+            Browse(_mods, "Pick Wheel Wizard's Mods folder"), Clear(_mods));
         _useWheelWizard.Checked = settings.UseWheelWizard;
-        Check(_useWheelWizard, new Padding(0, 4, 0, 0));
-        Add("Save packs and downloads to", _output, Browse(_output, "Where should packs and downloads go?"));
-        Add("Sample rate (32000 recommended, fanfares always use it)", _rate);
-        Add("Volume across songs", _loudness);
-        var ffmpegPath = Tools.TryFind("ffmpeg");
-        bool hasFfmpeg = FfmpegInstaller.IsInstalled;
-        var ffmpegStatus = new Label
-        {
-            Text = hasFfmpeg ? $"Installed: {ffmpegPath}" : "Not installed. It's needed to convert songs.",
-            AutoSize = false,
-            Width = 360,
-            Height = 32,
-            TextAlign = ContentAlignment.MiddleLeft,
-            AutoEllipsis = true,
-            Tag = Theme.MutedTag,
-            Margin = new Padding(0),
-        };
-        var ffmpegButton = new ModernButton { Text = hasFfmpeg ? "Reinstall" : "Install", AutoSize = true, Height = 28, Margin = new Padding(6, 0, 0, 0), Tag = hasFfmpeg ? "" : Theme.AccentTag };
-        ffmpegButton.Click += (_, _) =>
-        {
-            WantsFfmpeg = true;
-            Accept();
-        };
-        Add("FFmpeg", ffmpegStatus, ffmpegButton);
-
+        Check(_useWheelWizard);
+        _output.Box.ReadOnly = true;
+        _output.Box.Text = settings.OutputFolder.Length > 0 ? settings.OutputFolder : AppStorage.DefaultOutputFolder;
+        Add("Save to", _output, "Where packs and downloaded songs go.", Browse(_output, "Where should packs and downloads go?"));
         _game.Box.ReadOnly = true;
         _game.Box.Text = settings.GameFile;
         var gameButton = new ModernButton { Text = "Browse", AutoSize = true, Margin = new Padding(6, 0, 0, 0) };
@@ -2509,19 +2643,56 @@ public sealed class SettingsForm : Form
             if (dialog.ShowDialog(this) == DialogResult.OK)
                 _game.Box.Text = dialog.FileName;
         };
-        Add("Mario Kart Wii file (only for raising the volume)", _game, gameButton, Clear(_game));
+        Add("Game file", _game, "Your Mario Kart Wii file. Only needed to raise the music volume.", gameButton, Clear(_game));
+
+        Heading("Sound");
+        foreach (int rate in new[] { 32000, 24000, 22050, 16000 })
+            _rate.Items.Add(rate);
+        _rate.SelectedItem = options.SampleRate;
+        Add("Sample rate", _rate, "32000 is recommended. Fanfares always use it.");
+        _loudness.Items.AddRange([Options.LoudnessEven, Options.LoudnessPeak, Options.LoudnessOff]);
+        _loudness.SelectedItem = options.Loudness;
+        Add("Volume", _loudness, "How the volume is evened out across songs.");
+        var ffmpegPath = Tools.TryFind("ffmpeg");
+        bool hasFfmpeg = FfmpegInstaller.IsInstalled;
+        var ffmpegStatus = new Label
+        {
+            Text = hasFfmpeg ? $"Installed: {ffmpegPath}" : "Not installed. It's needed to convert songs.",
+            AutoSize = false,
+            Width = 280,
+            Height = 28,
+            TextAlign = ContentAlignment.MiddleLeft,
+            AutoEllipsis = true,
+            Tag = Theme.MutedTag,
+        };
+        var ffmpegButton = new ModernButton { Text = hasFfmpeg ? "Reinstall" : "Install", AutoSize = true, Height = 28, Margin = new Padding(6, 0, 0, 0), Tag = hasFfmpeg ? "" : Theme.AccentTag };
+        ffmpegButton.Click += (_, _) =>
+        {
+            WantsFfmpeg = true;
+            Accept();
+        };
+        Add("FFmpeg", ffmpegStatus, hasFfmpeg ? ffmpegPath ?? "" : "", ffmpegButton);
         _boost.Checked = settings.BoostMusicSlots;
         _raceBoost.Checked = options.RaceBoost;
-        _updates.Checked = settings.CheckForUpdates;
-        Check(_boost, new Padding(0, 12, 0, 4));
-        Check(_raceBoost, new Padding(0, 0, 0, 4));
-        Check(_multi, new Padding(0, 0, 0, 4));
-        Check(_final, new Padding(0, 0, 0, 4));
-        Check(_updates, new Padding(0));
+        _multi.Checked = options.MultiChannelSlots;
+        _final.Checked = options.StockFinalLapFiles;
+        Check(_boost, "Raises the music volumes in your own copy of revo_kart.brsar, made from your game file.");
+        Check(_raceBoost, "The game's race mix is quiet, so race songs are made a little louder.");
+        Check(_multi, "Only for CTGP or other mods. Retro Rewind doesn't need it.");
+        Check(_final);
 
-        var projectButtons = new FlowLayoutPanel { AutoSize = true, Margin = new Padding(0, 12, 0, 0) };
+        Heading("Other");
+        _updates.Checked = settings.CheckForUpdates;
+        Check(_updates);
+
+        // Project and dialog buttons stay at the bottom, so Save is always in reach however long the list is.
+        var footer = new TableLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, ColumnCount = 2, Padding = new Padding(14, 8, 14, 10) };
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        var projectButtons = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };
         var openProject = new ModernButton { Text = "Open project", AutoSize = true, Margin = new Padding(0, 0, 6, 0) };
-        var saveProject = new ModernButton { Text = "Save project", AutoSize = true, Margin = new Padding(0) };
+        var saveProject = new ModernButton { Text = "Save project", AutoSize = true, Margin = new Padding(0, 0, 6, 0) };
+        var removePack = new ModernButton { Text = "Remove pack from game", AutoSize = true, Margin = new Padding(0, 0, 18, 0) };
         openProject.Click += (_, _) =>
         {
             WantsOpen = true;
@@ -2532,26 +2703,52 @@ public sealed class SettingsForm : Form
             WantsSave = true;
             Accept();
         };
-        var removePack = new ModernButton { Text = "Remove pack from game", AutoSize = true, Margin = new Padding(6, 0, 0, 0) };
         removePack.Click += (_, _) =>
         {
             WantsRemove = true;
             Accept();
         };
         projectButtons.Controls.AddRange([openProject, saveProject, removePack]);
-        layout.Controls.Add(projectButtons, 0, row++);
-        layout.SetColumnSpan(projectButtons, 2);
-
-        var buttons = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.RightToLeft, Dock = DockStyle.Fill, Margin = new Padding(0, 14, 0, 0) };
+        var buttons = new FlowLayoutPanel { AutoSize = true, WrapContents = false, FlowDirection = FlowDirection.RightToLeft, Margin = new Padding(0) };
         var ok = new ModernButton { Text = "Save", Tag = Theme.AccentTag, AutoSize = true, Height = 28, Margin = new Padding(6, 0, 0, 0) };
-        var cancel = new ModernButton { Text = "Cancel", AutoSize = true, Height = 28 };
+        var cancel = new ModernButton { Text = "Cancel", AutoSize = true, Height = 28, Margin = new Padding(0) };
         ok.Click += (_, _) => Accept();
         cancel.Click += (_, _) => Close();
         buttons.Controls.AddRange([ok, cancel]);
-        layout.Controls.Add(buttons, 0, row);
-        layout.SetColumnSpan(buttons, 2);
-        Controls.Add(layout);
+        footer.Controls.Add(projectButtons, 0, 0);
+        footer.Controls.Add(buttons, 1, 0);
+        var line = new Panel { Dock = DockStyle.Bottom, Height = 1, Tag = Theme.LineTag };
+
+        var scroller = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
+        scroller.Controls.Add(layout);
+        Controls.Add(scroller);
+        Controls.Add(line);
+        Controls.Add(footer);
+        AcceptButton = ok;
+        CancelButton = cancel;
+        Load += (_, _) => FitToScreen(layout, footer);
         Theme.Apply(this);
+    }
+
+    /// <summary>Sizes the window to its settings, but never taller than the screen. Past that, the settings scroll.</summary>
+    private void FitToScreen(Control content, Control footer)
+    {
+        var area = Screen.FromControl(Owner ?? (Control)this).WorkingArea;
+        int chromeWidth = Width - ClientSize.Width;
+        int chromeHeight = Height - ClientSize.Height;
+        var size = content.GetPreferredSize(Size.Empty);
+        int footerHeight = footer.GetPreferredSize(Size.Empty).Height + 1;
+        int height = size.Height + footerHeight;
+        bool scrolls = height > area.Height - chromeHeight;
+        int width = Math.Max(size.Width, footer.GetPreferredSize(Size.Empty).Width) + (scrolls ? SystemInformation.VerticalScrollBarWidth + Theme.Px(12) : 0);
+        ClientSize = new Size(Math.Min(width, area.Width - chromeWidth), Math.Min(height, area.Height - chromeHeight));
+
+        // Centered over the main window, and kept on the screen.
+        var around = Owner?.Bounds ?? area;
+        int x = Math.Clamp(around.Left + (around.Width - Width) / 2, area.Left, Math.Max(area.Left, area.Right - Width));
+        int y = Math.Clamp(around.Top + (around.Height - Height) / 2, area.Top, Math.Max(area.Top, area.Bottom - Height));
+        StartPosition = FormStartPosition.Manual;
+        Location = new Point(x, y);
     }
 
     private static ModernButton Clear(FieldBox field)
@@ -2590,6 +2787,10 @@ public sealed class SettingsForm : Form
         _settings.GameFile = _game.Box.Text;
         _settings.BoostMusicSlots = _boost.Checked;
         _settings.CheckForUpdates = _updates.Checked;
+        _settings.UiScale = Theme.ScaleChoices[Math.Max(0, _scale.SelectedIndex)];
+        _settings.AccentColor = _accent;
+        _settings.BackgroundColor = _backColor;
+        _settings.BackgroundImage = _background.Box.Text;
         DialogResult = DialogResult.OK;
         Close();
     }

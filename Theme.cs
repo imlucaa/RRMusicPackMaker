@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Drawing.Drawing2D;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace RRMusicPackMaker;
@@ -22,7 +23,11 @@ public sealed record Palette(
     Color Wave,
     Color LoopFill,
     Color Hover,
-    Color Strong);
+    Color Strong)
+{
+    /// <summary>The outline on main buttons and the line under the open tab: white on dark backgrounds, near black on light ones.</summary>
+    public Color Outline => IsDark ? Color.White : Color.FromArgb(20, 20, 20);
+}
 
 /// <summary>
 /// The app's look, in one place. One black theme in the style of a desktop music player: flat panels
@@ -65,8 +70,200 @@ public static class Theme
         Hover: Color.FromArgb(30, 30, 30),
         Strong: Color.FromArgb(110, 110, 110));
 
-    /// <summary>The app only has the dark theme.</summary>
-    public static Palette Current => Dark;
+    /// <summary>The palette in use: the dark one, with the accent color the user picked, if any.</summary>
+    public static Palette Current { get; private set; } = Dark;
+
+    /// <summary>How much bigger everything is drawn, from the app size setting. 1 is normal size.</summary>
+    public static float ScaleFactor { get; private set; } = 1f;
+
+    /// <summary>The picture behind the main window, or empty for plain black.</summary>
+    public static string BackgroundPath { get; private set; } = "";
+
+    /// <summary>The app sizes to offer, in percent.</summary>
+    public static readonly int[] ScaleChoices = [75, 90, 100, 110, 125, 150, 175, 200];
+
+    /// <summary>A size in pixels at the current app size.</summary>
+    public static int Px(int value) => (int)Math.Round(value * ScaleFactor);
+
+    /// <summary>Takes the look from the settings. Call it before any window is made, because sizes are fixed then.</summary>
+    public static void Configure(AppSettings settings)
+    {
+        ScaleFactor = Math.Clamp(settings.UiScale, ScaleChoices[0], ScaleChoices[^1]) / 100f;
+        SetLook(settings.AccentColor, settings.BackgroundImage, settings.BackgroundColor);
+    }
+
+    /// <summary>Changes the colors and background picture. Unlike the size, these can change while windows are open.</summary>
+    public static void SetLook(string accent, string background, string backgroundColor = "")
+    {
+        var palette = ParseColor(backgroundColor) is { } back ? WithBackground(back) : Dark;
+        Current = ParseColor(accent) is { } color ? WithAccent(color, palette) : palette;
+        BackgroundPath = background;
+    }
+
+    /// <summary>
+    /// A palette on another background color. The greys that give depth step away from it, lighter on a dark
+    /// color and darker on a light one, and the text is whichever of light or dark reads better on it.
+    /// </summary>
+    public static Palette WithBackground(Color back)
+    {
+        var lightText = Dark.Text;
+        var darkText = Color.FromArgb(24, 24, 24);
+        bool dark = Contrast(lightText, back) >= Contrast(darkText, back);
+        Color Step(int amount) => dark
+            ? Color.FromArgb(Math.Min(255, back.R + amount), Math.Min(255, back.G + amount), Math.Min(255, back.B + amount))
+            : Color.FromArgb(Math.Max(0, back.R - amount), Math.Max(0, back.G - amount), Math.Max(0, back.B - amount));
+        var text = dark ? lightText : darkText;
+
+        // Mid tones are hard to read on, so the text goes fully white or black when the softer one isn't clear enough.
+        if (Contrast(text, back) < 4.5)
+            text = dark ? Color.White : Color.Black;
+        return Dark with
+        {
+            IsDark = dark,
+            Window = back,
+            Panel = back,
+            Raised = Step(22),
+            Border = Step(38),
+            Hover = Step(30),
+            Selection = Step(44),
+            Text = text,
+            Muted = Blend(text, back, 0.3),
+            SelectionText = Contrast(Color.FromArgb(245, 245, 245), Step(44)) >= Contrast(Color.FromArgb(10, 10, 10), Step(44))
+                ? Color.FromArgb(245, 245, 245)
+                : Color.FromArgb(10, 10, 10),
+            Wave = Step(140),
+            Strong = Step(110),
+            LoopFill = Blend(back, Dark.Accent, 0.25),
+        };
+    }
+
+    /// <summary>WCAG contrast between two colors, from 1 to 21.</summary>
+    public static double Contrast(Color a, Color b)
+    {
+        double x = Luminance(a), y = Luminance(b);
+        return (Math.Max(x, y) + 0.05) / (Math.Min(x, y) + 0.05);
+    }
+
+    /// <summary>Reads #RRGGBB. Anything else gives null, which means the standard amber.</summary>
+    public static Color? ParseColor(string text)
+    {
+        text = text.Trim().TrimStart('#');
+        if (text.Length != 6 || !int.TryParse(text, System.Globalization.NumberStyles.HexNumber, null, out int value))
+            return null;
+        return Color.FromArgb((value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF);
+    }
+
+    public static string ToHex(Color color) => $"#{color.R:X2}{color.G:X2}{color.B:X2}";
+
+    /// <summary>The dark palette with another accent. Text on it turns white when the color is too dark for black text.</summary>
+    public static Palette WithAccent(Color accent) => WithAccent(accent, Dark);
+
+    public static Palette WithAccent(Color accent, Palette basis) => basis with
+    {
+        Accent = accent,
+        AccentHover = Blend(accent, Color.White, 0.2),
+        OnAccent = Luminance(accent) > 0.18 ? Color.FromArgb(18, 18, 18) : Color.White,
+        LoopFill = Blend(basis.Window, accent, 0.25),
+    };
+
+    private static Color Blend(Color from, Color to, double amount) => Color.FromArgb(
+        (int)Math.Round(from.R + (to.R - from.R) * amount),
+        (int)Math.Round(from.G + (to.G - from.G) * amount),
+        (int)Math.Round(from.B + (to.B - from.B) * amount));
+
+    /// <summary>WCAG relative luminance, from 0 for black to 1 for white.</summary>
+    public static double Luminance(Color color)
+    {
+        static double Channel(int value)
+        {
+            double c = value / 255.0;
+            return c <= 0.03928 ? c / 12.92 : Math.Pow((c + 0.055) / 1.055, 2.4);
+        }
+        return 0.2126 * Channel(color.R) + 0.7152 * Channel(color.G) + 0.0722 * Channel(color.B);
+    }
+
+    /// <summary>
+    /// Paints what's behind a control. With a background picture the panels are see-through, so this draws
+    /// the picture from the window instead of a flat color.
+    /// </summary>
+    public static void PaintBehind(Control control, Graphics g)
+    {
+        if (control.Parent is { } parent && parent.BackColor.A < 255)
+            ButtonRenderer.DrawParentBackground(g, control.ClientRectangle, control);
+        else
+            g.Clear(control.Parent?.BackColor ?? Current.Window);
+    }
+
+    private static readonly ConditionalWeakTable<Form, object> ScaledForms = new();
+    private static readonly ConditionalWeakTable<Form, object> FittedForms = new();
+
+    /// <summary>
+    /// A fixed-height row of a table, like a search box beside a button, sizes its row to the controls in it.
+    /// Scaling then grows the controls and the row again, so they end up twice too tall. A row that fills
+    /// the table keeps them the table's height instead.
+    /// </summary>
+    private static void FillSingleRows(Control root)
+    {
+        foreach (Control child in root.Controls)
+        {
+            if (child is TableLayoutPanel { AutoSize: false, RowStyles.Count: 0 } table
+                && table.Dock is DockStyle.Top or DockStyle.Bottom or DockStyle.None
+                && table.GetRowHeights().Length <= 1)
+                table.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            FillSingleRows(child);
+        }
+    }
+
+    /// <summary>
+    /// A window that sizes itself to its contents can end up taller than the screen at a big app size.
+    /// Then its contents go in a scrolling panel, and the window is made to fit the screen.
+    /// </summary>
+    private static void ScrollWhenTooBig(Form form)
+    {
+        if (!form.AutoSize || FittedForms.TryGetValue(form, out _))
+            return;
+        FittedForms.Add(form, form);
+        form.Load += (_, _) =>
+        {
+            var area = Screen.FromControl(form.Owner ?? (Control)form).WorkingArea;
+            if (form.Height <= area.Height && form.Width <= area.Width)
+                return;
+            int chromeWidth = form.Width - form.ClientSize.Width;
+            int chromeHeight = form.Height - form.ClientSize.Height;
+            var client = form.ClientSize;
+            var content = form.Controls.Cast<Control>().ToArray();
+            var scroller = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
+            form.SuspendLayout();
+            foreach (var control in content)
+            {
+                form.Controls.Remove(control);
+                scroller.Controls.Add(control);
+            }
+            form.AutoSize = false;
+            form.Controls.Add(scroller);
+            Apply(scroller);
+            form.ClientSize = new Size(
+                Math.Min(client.Width + SystemInformation.VerticalScrollBarWidth, area.Width - chromeWidth),
+                Math.Min(client.Height, area.Height - chromeHeight));
+            form.ResumeLayout();
+            form.StartPosition = FormStartPosition.Manual;
+            form.Location = new Point(area.Left + (area.Width - form.Width) / 2, area.Top + (area.Height - form.Height) / 2);
+        };
+    }
+
+    /// <summary>Makes a window and everything in it bigger or smaller, once, and keeps it on the screen.</summary>
+    private static void ScaleWindow(Form form)
+    {
+        if (ScaleFactor == 1f || ScaledForms.TryGetValue(form, out _))
+            return;
+        ScaledForms.Add(form, form);
+        FillSingleRows(form);
+        form.Scale(new SizeF(ScaleFactor, ScaleFactor));
+        var area = Screen.FromControl(form).WorkingArea;
+        form.MinimumSize = new Size(Math.Min(form.MinimumSize.Width, area.Width), Math.Min(form.MinimumSize.Height, area.Height));
+        if (!form.AutoSize)
+            form.Size = new Size(Math.Min(form.Width, area.Width), Math.Min(form.Height, area.Height));
+    }
 
     // Nearly square corners on controls, and none at all on the panels that hold them.
     private const int CornerRadius = 2;
@@ -134,10 +331,10 @@ public static class Theme
     });
 
     /// <summary>Body text: the plain Windows font, small, as in a desktop music player.</summary>
-    public static Font UiFont(float size = 9f) => new(SystemFontName.Value, size);
+    public static Font UiFont(float size = 9f) => new(SystemFontName.Value, size * ScaleFactor);
 
     /// <summary>Headings: the same font in semibold, so they stand out by weight rather than by a second typeface.</summary>
-    public static Font TitleFont(float size = 12f) => new("Segoe UI Semibold", size);
+    public static Font TitleFont(float size = 12f) => new("Segoe UI Semibold", size * ScaleFactor);
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr window, int attribute, ref int value, int size);
@@ -182,7 +379,11 @@ public static class Theme
             form.HandleCreated += (_, _) => Paint();
     }
 
-    public static void Apply(Control root)
+    /// <summary>
+    /// Colors a control and everything in it. With seeThrough, panels let the window's background picture
+    /// show, while lists and text boxes stay solid so they're easy to read.
+    /// </summary>
+    public static void Apply(Control root, bool seeThrough = false)
     {
         var p = Current;
         string tag = root.Tag as string ?? "";
@@ -192,12 +393,14 @@ public static class Theme
                 form.BackColor = p.Window;
                 form.ForeColor = p.Text;
                 ThemeTitleBar(form);
+                ScaleWindow(form);
+                ScrollWhenTooBig(form);
                 break;
             case Button button:
                 button.Invalidate();
                 break;
             case Panel { AutoScroll: true } scroller:
-                scroller.BackColor = tag == PanelTag ? p.Panel : p.Window;
+                scroller.BackColor = seeThrough ? Color.Transparent : tag == PanelTag ? p.Panel : p.Window;
                 ThemeNative(scroller, "DarkMode_Explorer");
                 break;
             case Label label:
@@ -224,7 +427,7 @@ public static class Theme
                 return;
             case SegmentedBar bar:
                 // Tabs sit straight on the header, so the bar takes the color around it.
-                bar.BackColor = bar.Parent?.BackColor ?? p.Window;
+                bar.BackColor = seeThrough ? Color.Transparent : bar.Parent?.BackColor ?? p.Window;
                 bar.Invalidate();
                 break;
             case CheckBox check:
@@ -240,12 +443,18 @@ public static class Theme
                 ThemeNative(list, "DarkMode_Explorer");
                 list.Invalidate();
                 break;
+            case Panel panel when seeThrough && tag != LineTag:
+                panel.BackColor = Color.Transparent;
+                panel.ForeColor = p.Text;
+                panel.Invalidate();
+                break;
             default:
+                // Only panels can be see-through, so anything else takes a solid color.
                 root.BackColor = tag switch
                 {
                     PanelTag => p.Panel,
                     LineTag => p.Border,
-                    _ => root.Parent is { } parent ? parent.BackColor : p.Window,
+                    _ => root.Parent is { BackColor.A: 255 } parent ? parent.BackColor : p.Window,
                 };
                 root.ForeColor = p.Text;
                 root.Invalidate();
@@ -253,7 +462,7 @@ public static class Theme
         }
 
         foreach (Control child in root.Controls)
-            Apply(child);
+            Apply(child, seeThrough);
     }
 
     private static void ApplyGrid(DataGridView grid)
@@ -303,8 +512,8 @@ public sealed class FieldBox : Panel
     protected override void OnPaint(PaintEventArgs e)
     {
         var p = Theme.Current;
-        e.Graphics.Clear(Parent?.BackColor ?? p.Window);
-        Theme.FillBox(e.Graphics, ClientRectangle, p.Raised, Box.Focused ? Color.White : p.Border);
+        Theme.PaintBehind(this, e.Graphics);
+        Theme.FillBox(e.Graphics, ClientRectangle, p.Raised, Box.Focused ? p.Outline : p.Border);
     }
 
     protected override void OnPaintBackground(PaintEventArgs e)
@@ -323,7 +532,7 @@ public sealed class FlatCombo : ComboBox
         DropDownStyle = ComboBoxStyle.DropDownList;
         FlatStyle = FlatStyle.Flat;
         DrawMode = DrawMode.OwnerDrawFixed;
-        ItemHeight = 20;
+        ItemHeight = Theme.Px(20);
     }
 
     protected override void OnDrawItem(DrawItemEventArgs e)
@@ -349,9 +558,14 @@ public sealed class FlatCombo : ComboBox
         var p = Theme.Current;
         using var g = Graphics.FromHwnd(Handle);
         var bounds = new Rectangle(0, 0, Width, Height);
-        using (var back = new SolidBrush(Parent?.BackColor ?? p.Window))
+        if (Parent is { BackColor.A: < 255 })
+            ButtonRenderer.DrawParentBackground(g, bounds, this);
+        else
+        {
+            using var back = new SolidBrush(Parent?.BackColor ?? p.Window);
             g.FillRectangle(back, bounds);
-        Theme.FillBox(g, bounds, p.Raised, Focused ? Color.White : p.Border);
+        }
+        Theme.FillBox(g, bounds, p.Raised, Focused ? p.Outline : p.Border);
         var textBounds = new Rectangle(8, 0, Width - 30, Height);
         TextRenderer.DrawText(g, Text, Font, textBounds, Enabled ? p.Text : p.Muted,
             TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
@@ -394,8 +608,11 @@ public sealed class CardPanel : Panel
     protected override void OnPaint(PaintEventArgs e)
     {
         var p = Theme.Current;
-        e.Graphics.Clear(Parent?.BackColor ?? p.Window);
-        Theme.FillBox(e.Graphics, ClientRectangle, p.Panel, p.Border, Theme.CardRadius);
+        Theme.PaintBehind(this, e.Graphics);
+
+        // Over a background picture the panel is dark glass, so the picture shows but text stays readable.
+        var fill = BackColor.A < 255 ? Color.FromArgb(170, p.Panel) : p.Panel;
+        Theme.FillBox(e.Graphics, ClientRectangle, fill, p.Border, Theme.CardRadius);
     }
 
     protected override void OnResize(EventArgs e)
@@ -424,6 +641,15 @@ public class ModernButton : Button
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
         Height = 28;
         Cursor = Cursors.Hand;
+    }
+
+    // The height asked for when the button was made, before the app size changed anything.
+    private int? _designHeight;
+
+    protected override void OnParentChanged(EventArgs e)
+    {
+        _designHeight ??= Height;
+        base.OnParentChanged(e);
     }
 
     protected override void OnGotFocus(EventArgs e)
@@ -475,18 +701,20 @@ public class ModernButton : Button
 
     public override Size GetPreferredSize(Size proposedSize)
     {
+        // Sized from the height it was made with, not its current one. Growing the window scales sizes,
+        // and starting from the current height would scale buttons that already fit the bigger text again.
         var text = TextRenderer.MeasureText(Text, Font);
-        return new Size(text.Width + 24, Math.Max(Height, text.Height + 10));
+        return new Size(text.Width + Theme.Px(24), Math.Max(Theme.Px(_designHeight ?? Height), text.Height + Theme.Px(10)));
     }
 
     protected override void OnPaint(PaintEventArgs e)
     {
         var p = Theme.Current;
         var g = e.Graphics;
-        g.Clear(Parent?.BackColor ?? p.Window);
+        Theme.PaintBehind(this, g);
         string style = Tag as string ?? "";
         bool quiet = style is Theme.GhostTag or Theme.ActiveTag;
-        Color back = Parent?.BackColor ?? p.Window;
+        Color back = Parent is { BackColor.A: 255 } parent ? parent.BackColor : Color.Transparent;
         Color fill;
         Color text;
         Color? border = null;
@@ -511,7 +739,7 @@ public class ModernButton : Button
             // The main action keeps the grey of the other buttons and is marked by a white outline.
             fill = _pressed ? p.Selection : _hover ? p.Hover : p.Raised;
             text = p.Text;
-            border = _hover ? p.Text : Color.White;
+            border = _hover ? p.Text : p.Outline;
         }
         else
         {
@@ -525,7 +753,7 @@ public class ModernButton : Button
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
         if (style == Theme.ActiveTag)
         {
-            using var line = new SolidBrush(Color.White);
+            using var line = new SolidBrush(p.Outline);
             g.FillRectangle(line, 6, Height - 2, Width - 12, 2);
         }
         if (Focused && ShowFocusCues)
@@ -544,7 +772,13 @@ public sealed class SegmentedBar : FlowLayoutPanel
         DoubleBuffered = true;
     }
 
-    protected override void OnPaintBackground(PaintEventArgs e) => e.Graphics.Clear(Parent?.BackColor ?? Theme.Current.Window);
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {
+        if (BackColor.A < 255)
+            base.OnPaintBackground(e);
+        else
+            e.Graphics.Clear(BackColor);
+    }
 
     protected override void OnResize(EventArgs eventargs)
     {
@@ -556,7 +790,7 @@ public sealed class SegmentedBar : FlowLayoutPanel
 /// <summary>A check box drawn in the app's colors. The Windows one hides its tick in dark mode.</summary>
 public sealed class FlatCheck : CheckBox
 {
-    private const int BoxSize = 16;
+    private static int BoxSize => Theme.Px(16);
 
     public FlatCheck() => DoubleBuffered = true;
 
@@ -564,15 +798,16 @@ public sealed class FlatCheck : CheckBox
     {
         var p = Theme.Current;
         var g = e.Graphics;
-        g.Clear(Parent?.BackColor ?? p.Window);
+        Theme.PaintBehind(this, g);
         int top = (Height - BoxSize) / 2;
         var box = new Rectangle(0, top, BoxSize, BoxSize);
         Theme.FillBox(g, box, Checked ? p.Accent : p.Raised, Checked ? null : p.Strong, 2);
         if (Checked)
         {
             g.SmoothingMode = SmoothingMode.AntiAlias;
-            using var tick = new Pen(p.OnAccent, 2f);
-            g.DrawLines(tick, new[] { new PointF(3.5f, top + 8.5f), new PointF(6.8f, top + 11.8f), new PointF(12.5f, top + 4.5f) });
+            using var tick = new Pen(p.OnAccent, 2f * Theme.ScaleFactor);
+            float k = BoxSize / 16f;
+            g.DrawLines(tick, new[] { new PointF(3.5f * k, top + 8.5f * k), new PointF(6.8f * k, top + 11.8f * k), new PointF(12.5f * k, top + 4.5f * k) });
             g.SmoothingMode = SmoothingMode.None;
         }
         var text = new Rectangle(BoxSize + 8, 0, Width - BoxSize - 8, Height);
@@ -621,7 +856,7 @@ public sealed class ThinProgress : Control
 
     protected override void OnPaint(PaintEventArgs e)
     {
-        e.Graphics.Clear(Parent?.BackColor ?? Theme.Current.Window);
+        Theme.PaintBehind(this, e.Graphics);
         using var brush = new SolidBrush(Theme.Current.Accent);
         e.Graphics.FillRectangle(brush, 0, 0, (float)(Width * _fraction), Height);
     }
@@ -654,7 +889,7 @@ public sealed class LoopThumb : Control
     {
         var p = Theme.Current;
         var g = e.Graphics;
-        g.Clear(Parent?.BackColor ?? p.Window);
+        Theme.PaintBehind(this, g);
         using var shape = Theme.Rounded(new Rectangle(0, 0, Width - 1, Height - 1));
         using (var back = new SolidBrush(p.Raised))
             g.FillPath(back, shape);
@@ -710,7 +945,7 @@ public sealed class SideList : ListBox
     {
         DrawMode = DrawMode.OwnerDrawFixed;
         BorderStyle = BorderStyle.None;
-        ItemHeight = 24;
+        ItemHeight = Theme.Px(24);
         IntegralHeight = false;
     }
 

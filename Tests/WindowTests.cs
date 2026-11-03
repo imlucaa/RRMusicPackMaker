@@ -200,6 +200,103 @@ public class WindowTests : IDisposable
     });
 
     [Fact]
+    public void Look_AccentAndBackground_ShowStraightAway_AndPlainBlackComesBack() => OnUiThread(() =>
+    {
+        string picture = Path.Combine(_data, "picture.png");
+        using (var bitmap = new Bitmap(64, 32))
+        {
+            using (var g = Graphics.FromImage(bitmap))
+                g.Clear(Color.SteelBlue);
+            bitmap.Save(picture, System.Drawing.Imaging.ImageFormat.Png);
+        }
+        try
+        {
+            using var form = OpenWindow();
+            Assert.False(form.HasBackdropForTest);
+            form.SettingsForTest.AccentColor = "#8A5CFF";
+            form.SettingsForTest.BackgroundImage = picture;
+            form.ApplyLook();
+            Assert.True(form.HasBackdropForTest);
+            Assert.Equal(Color.FromArgb(0x8A, 0x5C, 0xFF).ToArgb(), Theme.Current.Accent.ToArgb());
+
+            // The window still draws over the picture, and the file isn't locked.
+            using var shot = new Bitmap(form.Width, form.Height);
+            form.DrawToBitmap(shot, new Rectangle(0, 0, form.Width, form.Height));
+            File.Delete(picture);
+
+            form.SettingsForTest.AccentColor = "";
+            form.SettingsForTest.BackgroundImage = "";
+            form.ApplyLook();
+            Assert.False(form.HasBackdropForTest);
+            Assert.Same(Theme.Dark, Theme.Current);
+            form.Close();
+        }
+        finally
+        {
+            Theme.SetLook("", "");
+        }
+    });
+
+    private static IEnumerable<Control> AllControls(Control root)
+    {
+        foreach (Control child in root.Controls)
+        {
+            yield return child;
+            foreach (var inner in AllControls(child))
+                yield return inner;
+        }
+    }
+
+    [Fact]
+    public void BigAppSize_SettingsFitsTheScreen_AndButtonsMatchTheirFields() => OnUiThread(() =>
+    {
+        Theme.Configure(new AppSettings { UiScale = 200 });
+        try
+        {
+            using var settings = new SettingsForm(new Options(), new AppSettings());
+            settings.Show();
+            Application.DoEvents();
+            var area = Screen.FromControl(settings).WorkingArea;
+            Assert.True(settings.Height <= area.Height, $"{settings.Height} tall on a {area.Height} screen");
+            Assert.Contains(AllControls(settings), control => control is Panel { AutoScroll: true });
+
+            // A Browse button is as tall as the folder box beside it, not scaled twice.
+            var field = AllControls(settings).OfType<FieldBox>().First();
+            var browse = AllControls(settings).OfType<ModernButton>().First(button => button.Text == "Browse");
+            Assert.InRange(browse.Height, field.Height - 2, field.Height + 2);
+            settings.Close();
+
+            using var form = OpenWindow();
+            var search = AllControls(form).OfType<FieldBox>().First(box => box.Parent is TableLayoutPanel { Dock: DockStyle.Top });
+            Assert.True(search.Bottom <= search.Parent!.ClientSize.Height, "the search box fits its row");
+            form.Close();
+        }
+        finally
+        {
+            Theme.Configure(new AppSettings());
+        }
+    });
+
+    [Fact]
+    public void Look_BadPicture_StaysPlainBlack() => OnUiThread(() =>
+    {
+        string picture = Path.Combine(_data, "broken.png");
+        File.WriteAllText(picture, "not a picture");
+        try
+        {
+            using var form = OpenWindow();
+            form.SettingsForTest.BackgroundImage = picture;
+            form.ApplyLook();
+            Assert.False(form.HasBackdropForTest);
+            form.Close();
+        }
+        finally
+        {
+            Theme.SetLook("", "");
+        }
+    });
+
+    [Fact]
     public void Sidebar_HidesTheStockMusicCategories() => OnUiThread(() =>
     {
         using var form = OpenWindow();
@@ -897,6 +994,37 @@ public class WindowTests : IDisposable
         Assert.True(form.LogVisibleForTest);
         Assert.DoesNotContain("Activity", form.FooterButtonsForTest);
         form.Close();
+    });
+
+    [Fact]
+    public void Editor_Speed_ChangesTheSavedSong_AndIsRemembered() => OnUiThread(() =>
+    {
+        string song = WriteSong(6);
+        AppStorage.SaveSettings(new AppSettings { OutputFolder = Path.Combine(_data, "packs") });
+        using (var form = OpenWindow())
+        {
+            var opening = form.ShowTab(editor: true);
+            Pump(() => opening.IsCompleted);
+            var editor = form.EditorForTest;
+            var adding = editor.AddSongAsync(song);
+            Pump(() => adding.IsCompleted);
+
+            int nightcore = PackBuilder.SpeedIndex(1.25, false);
+            Assert.Equal(1.25, PackBuilder.SpeedChoices[nightcore].Speed);
+            editor.SetSpeedForTest(nightcore);
+            var playing = editor.PlayAsync();
+            Pump(() => playing.IsCompleted);
+            Assert.Equal(PreviewState.Playing, AudioPreview.State);
+            AudioPreview.Stop();
+
+            var saving = editor.SaveAsync();
+            Pump(() => saving.IsCompleted);
+            int samples = AudioIO.Decode(saving.Result!, 44100)[0].Length;
+            Assert.InRange(samples, 6 * 44100 / 1.25 - 500, 6 * 44100 / 1.25 + 500);
+            form.Close();
+        }
+
+        Assert.Equal(PackBuilder.SpeedIndex(1.25, false), EditorState.Load().Speed);
     });
 
     [Fact]

@@ -43,6 +43,15 @@ public class CatalogTests
         Assert.Equal(final, Catalog.FinalNameOf(normal));
 
     [Fact]
+    public void MenusAndFanfares_SayWhereTheyPlay()
+    {
+        var rows = Catalog.Build(null, out _).Where(row => row.Category is Catalog.CatMenu or Catalog.CatFanfare).ToList();
+        Assert.Equal(32, rows.Count);
+        Assert.All(rows, row => Assert.False(string.IsNullOrWhiteSpace(row.Note), row.Name));
+        Assert.Contains("time trial", rows.Single(row => row.FileBase == "o_FanfareMIwin_32").Note);
+    }
+
+    [Fact]
     public void Build_WithoutInstall_ListsEveryRetroRewindTrack()
     {
         var rows = Catalog.Build(null, out string message);
@@ -850,6 +859,99 @@ public class BuildTests : IDisposable
         row.Speed = 1.5;
         Run(row);
         Assert.InRange(AudioIO.ReadBrstmSummary(Music("1_Nx")).Samples, 62000, 66000);
+    }
+
+    [Fact]
+    public void Build_NoFinalLapFileAnywhere_LeavesTheSpeedUpToTheGame()
+    {
+        // Retro Rewind speeds up the normal file itself when it finds no final lap file.
+        Run(Row("1_N"));
+        Assert.False(File.Exists(Music("1_Nx")));
+    }
+
+    [Fact]
+    public void Build_RetroRewindHasItsOwnFinalLapFile_ReplacesItWithThisSongSpedUp()
+    {
+        // Otherwise Retro Rewind's own final lap music plays instead of the pack's song.
+        var row = Row("1_N");
+        row.ExistingFinalFiles.Add("1_Nx");
+        Run(row);
+        Assert.Equal(33920, AudioIO.ReadBrstmSummary(Music("1_Nx")).Rate);
+        Assert.Equal(32000, AudioIO.ReadBrstmSummary(Music("1_N")).Rate);
+    }
+
+    [Fact]
+    public void Build_FinalLapSong_IsWrittenFaster_LikeTheGame()
+    {
+        var row = Row("1_N");
+        row.FinalSource = _wav;
+        Run(row);
+        Assert.Equal(33920, AudioIO.ReadBrstmSummary(Music("1_Nx")).Rate);
+    }
+
+    [Theory]
+    [InlineData(1.0, 32000)]
+    [InlineData(1.2, 38400)]
+    [InlineData(1.25, 40000)]
+    public void Build_FinalLapSpeed_SetsHowFastTheFinalLapPlays(double speed, int rate)
+    {
+        var row = Row("1_N");
+        row.FinalSpeed = speed;
+        Run(row);
+        Assert.Equal(rate, AudioIO.ReadBrstmSummary(Music("1_Nx")).Rate);
+        Assert.Equal(32000, AudioIO.ReadBrstmSummary(Music("1_N")).Rate);
+    }
+
+    [Fact]
+    public void Build_StockSlot_UsesTheFinalLapSpeed()
+    {
+        var row = Row("n_Farm_n", stock: true);
+        row.FinalSpeed = 1.2;
+        Run(row);
+        Assert.Equal(38400, AudioIO.ReadBrstmSummary(Music("n_Farm_f")).Rate);
+    }
+
+    [Fact]
+    public void Build_ChangingTheFinalLapSpeed_EncodesAgain()
+    {
+        var row = Row("1_N");
+        Run(row);
+        Assert.Equal(1, Run(row).Unchanged);
+        row.FinalSpeed = 1.15;
+        Assert.Equal(0, Run(row).Unchanged);
+        Assert.Equal(36800, AudioIO.ReadBrstmSummary(Music("1_Nx")).Rate);
+    }
+
+    [Fact]
+    public void Build_ImportedSong_WhereRetroRewindHasAFinalLapFile_GetsOneMadeFromIt()
+    {
+        var row = Imported("1_N", MadeBrstm());
+        var track = new TrackRow { Name = "One", FileBase = "1_N", PulsarFinalBase = "1_Nx", Source = row.Source, KeepFile = true };
+        track.ExistingFinalFiles.Add("1_Nx");
+        Assert.Equal(0, Run(track).Failed);
+        Assert.Equal(AudioIO.ReadBrstmSummary(row.Source).Rate * 1.06, AudioIO.ReadBrstmSummary(Music("1_Nx")).Rate, 0);
+    }
+
+    [Fact]
+    public void Project_RemembersTheFinalLapSpeed()
+    {
+        var row = Row("1_N");
+        row.FinalSpeed = 1.2;
+        string path = Path.Combine(_folder, "final.json");
+        Project.From(new Options(), [row]).Save(path);
+        var fresh = new List<TrackRow> { new() { FileBase = "1_N" } };
+        Project.Load(path).ApplyTo(fresh);
+        Assert.Equal(1.2, fresh[0].FinalSpeed);
+    }
+
+    [Fact]
+    public void Project_FromBeforeFinalLapSpeed_UsesTheGamesSpeed()
+    {
+        string path = Path.Combine(_folder, "old.json");
+        File.WriteAllText(path, """{"Options":{},"Rows":[{"File":"1_N","Source":"a.wav"}]}""");
+        var fresh = new List<TrackRow> { new() { FileBase = "1_N" } };
+        Project.Load(path).ApplyTo(fresh);
+        Assert.Equal(PackBuilder.GameFinalSpeed, fresh[0].FinalSpeed);
     }
 
     [Fact]

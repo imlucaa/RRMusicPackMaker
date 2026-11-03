@@ -357,9 +357,75 @@ public class ThemeTests
     [Fact]
     public void ThereIsOnlyTheDarkTheme()
     {
-        Assert.Same(Theme.Dark, Theme.Current);
-        Assert.True(Theme.Current.IsDark);
+        Assert.True(Theme.Dark.IsDark);
         Assert.Null(typeof(Theme).GetField("Light"));
+    }
+
+    [Theory]
+    [InlineData("#8A5CFF")]
+    [InlineData("#FFFF00")]
+    [InlineData("#102040")]
+    [InlineData("#FFFFFF")]
+    [InlineData("#000000")]
+    public void CustomAccent_KeepsTheTickReadable_AndTheRestOfTheTheme(string hex)
+    {
+        var color = Theme.ParseColor(hex)!.Value;
+        var p = Theme.WithAccent(color);
+        Assert.Equal(color.ToArgb(), p.Accent.ToArgb());
+        Assert.True(Contrast(p.OnAccent, p.Accent) >= 4.5, $"tick on {hex}");
+        Assert.Equal(Theme.Dark.Window, p.Window);
+        Assert.Equal(Theme.Dark.Text, p.Text);
+    }
+
+    [Theory]
+    [InlineData("#e8963e", "#E8963E")]
+    [InlineData("e8963e", "#E8963E")]
+    [InlineData(" #00FF7F ", "#00FF7F")]
+    public void AccentColor_ReadsHex(string text, string expected) => Assert.Equal(expected, Theme.ToHex(Theme.ParseColor(text)!.Value));
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("red")]
+    [InlineData("#12345")]
+    [InlineData("#GGGGGG")]
+    public void AccentColor_AnythingElse_MeansTheStandardAmber(string text) => Assert.Null(Theme.ParseColor(text));
+
+    [Fact]
+    public void AppSizes_IncludeNormal() => Assert.Contains(100, Theme.ScaleChoices);
+
+    [Theory]
+    [InlineData("#000000", true)]
+    [InlineData("#14213D", true)]
+    [InlineData("#808080", false)]
+    [InlineData("#F2EEE6", false)]
+    [InlineData("#FFFFFF", false)]
+    [InlineData("#FF69B4", false)]
+    public void BackgroundColor_KeepsTextReadable_AndPicksLightOrDarkText(string hex, bool dark)
+    {
+        var back = Theme.ParseColor(hex)!.Value;
+        var p = Theme.WithBackground(back);
+        Assert.Equal(dark, p.IsDark);
+        Assert.Equal(back.ToArgb(), p.Window.ToArgb());
+        Assert.True(Contrast(p.Text, p.Window) >= 4.5, $"text on {hex}");
+        // Fields and buttons step away from the background, so a mid grey leaves them a little less clear.
+        Assert.True(Contrast(p.Text, p.Raised) >= (hex == "#808080" ? 3.5 : 4.5), $"text on raised {hex}");
+        Assert.True(Contrast(p.SelectionText, p.Selection) >= 4.5, $"selected row on {hex}");
+        Assert.True(Contrast(p.Outline, p.Raised) >= 3, $"button outline on {hex}");
+    }
+
+    [Fact]
+    public void BackgroundColor_AndAccent_GoTogether()
+    {
+        Theme.SetLook("#8A5CFF", "", "#F2EEE6");
+        try
+        {
+            Assert.Equal(Color.FromArgb(0xF2, 0xEE, 0xE6).ToArgb(), Theme.Current.Window.ToArgb());
+            Assert.Equal(Color.FromArgb(0x8A, 0x5C, 0xFF).ToArgb(), Theme.Current.Accent.ToArgb());
+        }
+        finally
+        {
+            Theme.SetLook("", "");
+        }
     }
 
     [Fact]

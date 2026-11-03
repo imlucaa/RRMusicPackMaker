@@ -195,26 +195,17 @@ public sealed class AudioPreviewTests : IDisposable
     });
 
     [Fact]
-    public void MainWindow_ButtonsShowWhilePlaying_AndControlIt() => OnUiThread(() =>
+    public void MainWindow_HasNoPauseOrStopInTheBottomBar() => OnUiThread(() =>
     {
         using var form = new MainForm { StartPosition = FormStartPosition.Manual, Location = new Point(-5000, -5000) };
         form.Show();
         Application.DoEvents();
-        Assert.False(form.PreviewButtonsVisibleForTest);
-
+        Assert.True(form.HasFooterButtonForTest("Export pack"));
         Assert.True(form.PlayPreviewForTest(Silence(20)));
-        Assert.True(form.PreviewButtonsVisibleForTest);
-        Assert.Contains("Pause", form.PreviewPauseTextForTest);
-
-        form.ClickPreviewPauseForTest();
-        Assert.Equal(PreviewState.Paused, AudioPreview.State);
-        Assert.Contains("Resume", form.PreviewPauseTextForTest);
-        form.ClickPreviewPauseForTest();
-        Assert.Equal(PreviewState.Playing, AudioPreview.State);
-
-        form.ClickPreviewStopForTest();
-        Assert.Equal(PreviewState.Stopped, AudioPreview.State);
-        Assert.False(form.PreviewButtonsVisibleForTest);
+        Application.DoEvents();
+        Assert.False(form.HasFooterButtonForTest("Pause"));
+        Assert.False(form.HasFooterButtonForTest("Stop"));
+        AudioPreview.Stop();
         form.Close();
     });
 
@@ -374,7 +365,6 @@ public sealed class AudioPreviewTests : IDisposable
         var playing = editor.PlayAsync();
         Pump(() => playing.IsCompleted);
         Assert.True(editor.IsPlaying);
-        Assert.False(form.PreviewButtonsVisibleForTest);
         Pump(() => editor.TimelineForTest.PlayPosition > 0);
 
         Assert.True(form.HandleShortcut(Keys.Space));

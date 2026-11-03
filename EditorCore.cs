@@ -181,6 +181,9 @@ public sealed class EditorState
     public string Name { get; set; } = "";
     public int Blend { get; set; }
 
+    /// <summary>Which of the speed choices the saved song gets.</summary>
+    public int Speed { get; set; }
+
     private static string PathOnDisk => Path.Combine(AppStorage.Folder, "editor.json");
 
     public static EditorState Load()

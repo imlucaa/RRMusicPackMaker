@@ -25,6 +25,18 @@ public sealed class AppSettings
 
     /// <summary>Off for people who don't use Wheel Wizard, so packs only go in the Patches folder.</summary>
     public bool UseWheelWizard { get; set; } = true;
+
+    /// <summary>How big the app is drawn, in percent. It changes the next time the app opens.</summary>
+    public int UiScale { get; set; } = 100;
+
+    /// <summary>The accent color as #RRGGBB, or empty for the standard amber.</summary>
+    public string AccentColor { get; set; } = "";
+
+    /// <summary>The app's background color as #RRGGBB, or empty for black.</summary>
+    public string BackgroundColor { get; set; } = "";
+
+    /// <summary>A picture shown behind the main window, darkened so text stays readable. Empty for plain black.</summary>
+    public string BackgroundImage { get; set; } = "";
 }
 
 /// <summary>Where the app keeps its settings and the autosaved project.</summary>
