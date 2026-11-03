@@ -64,6 +64,9 @@ public sealed class TrackRow
     /// <summary>The song is a finished .brstm from an imported pack, so it's used as it is unless its settings change.</summary>
     public bool KeepFile { get; set; }
 
+    /// <summary>How much faster the final lap file plays. 1.06 matches how the game speeds up its own music.</summary>
+    public double FinalSpeed { get; set; } = PackBuilder.GameFinalSpeed;
+
     public bool IsAssigned => !string.IsNullOrWhiteSpace(Source);
 
     /// <summary>Plays during a race or battle, where the game mixes music far below menu level.</summary>
@@ -224,54 +227,56 @@ public static class Catalog
         new([0x29], "N64 Skyscraper", "r_64_battle_n"),
     ];
 
-    private static readonly (string Name, string File)[] Menus =
+    // Names follow the mkwiiki file list. Where they play comes from it and from the mariokartwii.com file
+    // thread, which says the "mission" files are used for time trials, battles and competitions.
+    private static readonly (string Name, string File, string About)[] Menus =
     [
-        ("Title screen / main menu", "title_bg"),
-        ("Offline menus", "offline_bg"),
-        ("Wi-Fi menu", "wifi_globe_bg"),
-        ("Wi-Fi lobby / voting", "wifi_lobby_bg"),
-        ("Options menu", "o_Option_32"),
-        ("Wi-Fi waiting to join / ghost replay", "o_Wi-Fi_waiting32"),
+        ("Title screen / main menu", "title_bg", "Plays on the title screen and the main menu."),
+        ("Offline menus", "offline_bg", "Plays in the menus for single player and local multiplayer."),
+        ("Wi-Fi menu", "wifi_globe_bg", "Plays in the online menus, with the globe."),
+        ("Wi-Fi lobby / voting", "wifi_lobby_bg", "Plays in an online room while everyone votes for the next track."),
+        ("Options menu", "o_Option_32", "Plays in the Options menu."),
+        ("Wi-Fi waiting to join / ghost replay", "o_Wi-Fi_waiting32", "Plays while waiting to join an online race, and while watching a ghost replay."),
     ];
 
-    private static readonly (string Name, string File, bool Short)[] Fanfares =
+    private static readonly (string Name, string File, bool Short, string About)[] Fanfares =
     [
-        ("1st place fanfare + results", "o_FanfareGP1_32", false),
-        ("1st place fanfare only", "o_FanfareGP1_only32", true),
-        ("2nd-5th place fanfare + results", "o_FanfareGP2_32", false),
-        ("2nd-5th place fanfare only", "o_FanfareGP2_only32", true),
-        ("6th-last place fanfare + results", "o_FanfareGPdame_32", false),
-        ("6th-last place fanfare only", "o_FanfareGPdame_only32", true),
-        ("Battle win fanfare + results", "o_FanfareTA1st_32", false),
-        ("Battle win fanfare only", "o_FanfareTA1st_only32", true),
-        ("Battle draw + results", "o_FanfareBTdraw_32", false),
-        ("Mission win fanfare + results", "o_FanfareMIwin_32", false),
-        ("Mission win fanfare only", "o_FanfareMIwin_only32", true),
-        ("Mission lose fanfare + results", "o_FanfareMIlose_32", false),
-        ("Mission lose results only", "o_FanfareMIlose_only32", false),
-        ("Mission boss win + results", "o_FanfareMIWinBoss_32", false),
-        ("Race intro", "o_Crs_In_Fan", true),
-        ("Wi-Fi race intro", "o_Crs_In_Fan_Wifi", true),
-        ("Battle intro", "o_Crs_In_Fan_battle", true),
-        ("Mission intro", "o_Crs_In_Fan_mission", true),
-        ("Race start fanfare", "o_Start32_fan", true),
-        ("Time trial start fanfare", "o_Start2_32_fan", true),
-        ("Trophy presentation, main", "o_hyousyou_winningrun", false),
-        ("Trophy presentation, normal", "o_hyousyou_normal", false),
-        ("Trophy presentation, short", "o_hyousyou_cut", false),
-        ("Trophy presentation, lose", "o_hyousyou_lose", false),
-        ("Ending theme (credits)", "o_Ending_PartA_32", false),
-        ("Unlocked character / cup / kart", "strm_me", true),
+        ("1st place fanfare + results", "o_FanfareGP1_32", false, "Plays when you finish 1st, and carries on through the results."),
+        ("1st place fanfare only", "o_FanfareGP1_only32", true, "The short jingle as you cross the line in 1st."),
+        ("2nd-5th place fanfare + results", "o_FanfareGP2_32", false, "Plays when you finish 2nd to 5th, and carries on through the results."),
+        ("2nd-5th place fanfare only", "o_FanfareGP2_only32", true, "The short jingle as you cross the line in 2nd to 5th."),
+        ("6th-last place fanfare + results", "o_FanfareGPdame_32", false, "Plays when you finish 6th or lower, and carries on through the results."),
+        ("6th-last place fanfare only", "o_FanfareGPdame_only32", true, "The short jingle as you cross the line in 6th or lower."),
+        ("Battle win fanfare + results", "o_FanfareTA1st_32", false, "Plays when you win a battle as the top player, and carries on through the results."),
+        ("Battle win fanfare only", "o_FanfareTA1st_only32", true, "The short jingle when you win a battle as the top player."),
+        ("Battle draw + results", "o_FanfareBTdraw_32", false, "Plays when a battle ends in a draw, and carries on through the results."),
+        ("Mission win fanfare + results", "o_FanfareMIwin_32", false, "Plays when you finish a time trial, and when your team wins a battle but you aren't the top player. Named for missions, which Mario Kart Wii doesn't have."),
+        ("Mission win fanfare only", "o_FanfareMIwin_only32", true, "The short jingle when you finish a time trial. Named for missions, which Mario Kart Wii doesn't have."),
+        ("Mission lose fanfare + results", "o_FanfareMIlose_32", false, "Plays when you lose a battle, and carries on through the results. Named for missions, which Mario Kart Wii doesn't have."),
+        ("Mission lose results only", "o_FanfareMIlose_only32", false, "Plays when you lose a battle. Named for missions, which Mario Kart Wii doesn't have."),
+        ("Mission boss win + results", "o_FanfareMIWinBoss_32", false, "Plays when you win a competition, and carries on through the results. Named for missions, which Mario Kart Wii doesn't have."),
+        ("Race intro", "o_Crs_In_Fan", true, "Plays while the camera flies over the track before an offline race."),
+        ("Wi-Fi race intro", "o_Crs_In_Fan_Wifi", true, "Plays while the camera flies over the track before an online race."),
+        ("Battle intro", "o_Crs_In_Fan_battle", true, "Plays while the camera flies over the arena before a battle."),
+        ("Mission intro", "o_Crs_In_Fan_mission", true, "Left over from the unused mission mode. Where it still plays isn't known for sure."),
+        ("Race start fanfare", "o_Start32_fan", true, "The short jingle as a race starts."),
+        ("Time trial start fanfare", "o_Start2_32_fan", true, "The short jingle as a time trial starts."),
+        ("Trophy presentation, main", "o_hyousyou_winningrun", false, "The trophy ceremony after a Grand Prix, the full version."),
+        ("Trophy presentation, normal", "o_hyousyou_normal", false, "The trophy ceremony after a Grand Prix, a shorter version."),
+        ("Trophy presentation, short", "o_hyousyou_cut", false, "The trophy ceremony after a Grand Prix, the shortest version."),
+        ("Trophy presentation, lose", "o_hyousyou_lose", false, "Plays after a Grand Prix when you didn't win a trophy."),
+        ("Ending theme (credits)", "o_Ending_PartA_32", false, "Plays during the ending credits."),
+        ("Unlocked character / cup / kart", "strm_me", true, "The jingle when you unlock a character, cup or kart."),
     ];
 
     /// <summary>Builds every row, including every track of the Retro Rewind install when one is given.</summary>
     public static List<TrackRow> Build(string? rrRoot, out string message)
     {
         var rows = new List<TrackRow>();
-        foreach (var (name, file) in Menus)
-            rows.Add(new TrackRow { Category = CatMenu, Name = name, FileBase = file, FixedRate = file.StartsWith("o_") ? 32000 : null });
-        foreach (var (name, file, isShort) in Fanfares)
-            rows.Add(new TrackRow { Category = CatFanfare, Name = name, FileBase = file, FixedRate = 32000, DefaultNoLoop = isShort });
+        foreach (var (name, file, about) in Menus)
+            rows.Add(new TrackRow { Category = CatMenu, Name = name, FileBase = file, FixedRate = file.StartsWith("o_") ? 32000 : null, Note = about });
+        foreach (var (name, file, isShort, about) in Fanfares)
+            rows.Add(new TrackRow { Category = CatFanfare, Name = name, FileBase = file, FixedRate = 32000, DefaultNoLoop = isShort, Note = about });
 
         var stockBySlot = new Dictionary<int, TrackRow>();
         foreach (var slot in StockRace)

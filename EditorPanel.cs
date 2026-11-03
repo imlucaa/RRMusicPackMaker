@@ -58,6 +58,7 @@ public sealed class EditorPanel : Panel
     private readonly FieldBox _name = new("Name for the new song") { Width = 240, Margin = new Padding(14, 1, 0, 0) };
     private readonly ComboBox _blend = new FlatCombo { Width = 130, Margin = new Padding(0, 2, 0, 0) };
     private readonly ComboBox _equalLength = new FlatCombo { Width = 170, Margin = new Padding(0, 2, 6, 0) };
+    private readonly ComboBox _speed = new FlatCombo { Width = 230, Margin = new Padding(0, 2, 0, 0), MaxDropDownItems = 14 };
     private readonly ModernButton _makeEqual = Tool("Make parts equal");
     private readonly ModernButton _play = Tool("▶  Play", Theme.AccentTag);
     private readonly ModernButton _pause = Tool("❚❚  Pause");
@@ -73,6 +74,7 @@ public sealed class EditorPanel : Panel
     private readonly ModernButton _deleteSong = new() { Text = "Delete song", Width = 262, Height = 28, Margin = new Padding(0, 0, 0, 10) };
     private readonly System.Windows.Forms.Timer _tick = new() { Interval = 50 };
     private long _playFrom;
+    private double _playSpeed = 1;
     private int _playRequest;
     private bool _saving;
     private bool _restored;
@@ -139,7 +141,13 @@ public sealed class EditorPanel : Panel
         _makeEqual.Margin = new Padding(0, 0, 22, 0);
         mergeRow.Controls.Add(_makeEqual);
         mergeRow.Controls.Add(new Label { Text = "Blend the joins", AutoSize = true, Margin = new Padding(0, 8, 8, 0) });
+        _blend.Margin = new Padding(0, 2, 22, 0);
         mergeRow.Controls.Add(_blend);
+        foreach (var choice in PackBuilder.SpeedChoices)
+            _speed.Items.Add(choice.Text);
+        _speed.SelectedIndex = 0;
+        mergeRow.Controls.Add(new Label { Text = "Speed", AutoSize = true, Margin = new Padding(0, 8, 8, 0) });
+        mergeRow.Controls.Add(_speed);
         var saveRow = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, WrapContents = false, Padding = new Padding(12, 6, 12, 8) };
         _name.Margin = new Padding(0, 1, 0, 0);
         saveRow.Controls.Add(_name);
@@ -180,6 +188,11 @@ public sealed class EditorPanel : Panel
         _save.Click += async (_, _) => await SaveAsync();
         _name.Box.TextChanged += (_, _) => SaveState();
         _blend.SelectedIndexChanged += (_, _) => SaveState();
+        _speed.SelectedIndexChanged += (_, _) =>
+        {
+            SaveState();
+            UpdateState();
+        };
         _timeline.PositionChanged += UpdateState;
         _timeline.PartDragged += (from, insertBefore) => MovePart(from, insertBefore);
         _timeline.PartTrimmed += TrimPart;
@@ -225,6 +238,7 @@ public sealed class EditorPanel : Panel
         var state = EditorState.Load();
         _name.Box.Text = state.Name;
         _blend.SelectedIndex = Math.Clamp(state.Blend, 0, BlendChoices.Length - 1);
+        _speed.SelectedIndex = Math.Clamp(state.Speed, 0, PackBuilder.SpeedChoices.Length - 1);
 
         var kept = new List<EditClip>();
         foreach (var clip in state.Clips)
@@ -445,7 +459,7 @@ public sealed class EditorPanel : Panel
     private void SaveState()
     {
         if (_restored)
-            new EditorState { Clips = _timeline.Clips, Name = _name.Box.Text, Blend = Math.Max(0, _blend.SelectedIndex) }.Save();
+            new EditorState { Clips = _timeline.Clips, Name = _name.Box.Text, Blend = Math.Max(0, _blend.SelectedIndex), Speed = Math.Max(0, _speed.SelectedIndex) }.Save();
     }
 
     internal void Split()
@@ -585,6 +599,27 @@ public sealed class EditorPanel : Panel
 
     private int BlendSamples => (int)(BlendChoices[Math.Max(0, _blend.SelectedIndex)].Seconds * EditTimeline.Rate);
 
+    private (string Text, double Speed, bool KeepPitch, bool Reverb) SpeedChoice => PackBuilder.SpeedChoices[Math.Max(0, _speed.SelectedIndex)];
+
+    /// <summary>
+    /// Plays the edit at the chosen speed, with the same processing a track's speed gets in the pack:
+    /// nightcore and slowed move the pitch, "same pitch" keeps it, and reverb is added on top.
+    /// </summary>
+    internal static short[][] ApplySpeed(short[][] audio, (string Text, double Speed, bool KeepPitch, bool Reverb) choice)
+    {
+        if (choice.Speed == 1 && !choice.Reverb)
+            return audio;
+        string temp = AudioIO.WriteRangePreview(audio, EditTimeline.Rate, 0, audio[0].Length / (double)EditTimeline.Rate + 1);
+        try
+        {
+            return Processing.Prepare(temp, EditTimeline.Rate, LoopMode.NoLoop, "", "", Options.LoudnessOff, null, 0, 0, choice.Speed, choice.KeepPitch, choice.Reverb).Channels;
+        }
+        finally
+        {
+            File.Delete(temp);
+        }
+    }
+
     private Dictionary<string, short[][]> AudioFor(IEnumerable<EditClip> clips) =>
         clips.Select(clip => clip.Source).Distinct(StringComparer.OrdinalIgnoreCase)
             .ToDictionary(source => source, source => _sources[source].Channels, StringComparer.OrdinalIgnoreCase);
@@ -623,15 +658,26 @@ public sealed class EditorPanel : Panel
         int request = ++_playRequest;
         long total = EditTimeline.Length(clips);
         long from = _timeline.Position >= total ? 0 : _timeline.Position;
-        var part = EditTimeline.Slice(clips, from, (long)(PreviewSeconds * EditTimeline.Rate));
+        var speed = SpeedChoice;
+        var part = EditTimeline.Slice(clips, from, (long)(PreviewSeconds * speed.Speed * EditTimeline.Rate));
         var audio = AudioFor(part);
         int blend = BlendSamples;
         _status("Getting ready to play...");
-        string file = await Task.Run(() =>
+        string file;
+        try
         {
-            var rendered = EditTimeline.Render(part, source => audio[source], blend);
-            return AudioIO.WriteRangePreview(rendered, EditTimeline.Rate, 0, PreviewSeconds + 1);
-        });
+            file = await Task.Run(() =>
+            {
+                var rendered = ApplySpeed(EditTimeline.Render(part, source => audio[source], blend), speed);
+                return AudioIO.WriteRangePreview(rendered, EditTimeline.Rate, 0, PreviewSeconds + 1);
+            });
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or System.ComponentModel.Win32Exception)
+        {
+            if (!IsDisposed)
+                _status($"Could not play it. {ex.Message}");
+            return;
+        }
         if (IsDisposed || request != _playRequest)
         {
             File.Delete(file);
@@ -643,6 +689,7 @@ public sealed class EditorPanel : Panel
             return;
         }
         _playFrom = from;
+        _playSpeed = speed.Speed;
         _tick.Start();
         _status($"Playing up to {PreviewSeconds:0} seconds. Press Esc to stop.");
     }
@@ -650,7 +697,7 @@ public sealed class EditorPanel : Panel
     private void FollowPlayback()
     {
         if (IsPlaying)
-            _timeline.PlayPosition = _playFrom + AudioPreview.PositionMilliseconds * EditTimeline.Rate / 1000;
+            _timeline.PlayPosition = _playFrom + (long)(AudioPreview.PositionMilliseconds * _playSpeed * EditTimeline.Rate / 1000);
     }
 
     internal void StopPlaying()
@@ -672,6 +719,7 @@ public sealed class EditorPanel : Panel
             name = clips[0].Name + " edit";
         var audio = AudioFor(clips);
         int blend = BlendSamples;
+        var speed = SpeedChoice;
         string folder = _songsFolder();
         _saving = true;
         UpdateState();
@@ -680,7 +728,7 @@ public sealed class EditorPanel : Panel
         {
             string path = await Task.Run(() =>
             {
-                var rendered = EditTimeline.Render(clips, source => audio[source], blend);
+                var rendered = ApplySpeed(EditTimeline.Render(clips, source => audio[source], blend), speed);
                 string seconds = AudioIO.WriteRangePreview(rendered, EditTimeline.Rate, 0, rendered[0].Length / (double)EditTimeline.Rate + 1);
                 Directory.CreateDirectory(folder);
                 string target = EditTimeline.UniquePath(folder, name);
@@ -694,7 +742,7 @@ public sealed class EditorPanel : Panel
             _status($"Saved {name}. It's in your songs, and in the dropdown on every track.");
             return path;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or System.ComponentModel.Win32Exception)
         {
             if (!IsDisposed)
                 _status("Could not save the song. See the log.");
@@ -793,6 +841,7 @@ public sealed class EditorPanel : Panel
     internal void SelectPartForTest(int index) => _timeline.Selected = index;
     internal void SetNameForTest(string name) => _name.Box.Text = name;
     internal void SetBlendForTest(int index) => _blend.SelectedIndex = index;
+    internal void SetSpeedForTest(int index) => _speed.SelectedIndex = index;
     internal void SetEqualChoiceForTest(int index) => _equalLength.SelectedIndex = index;
     internal string InfoForTest => _info.Text;
     internal string NameForTest => _name.Box.Text;

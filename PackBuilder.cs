@@ -20,7 +20,7 @@ public sealed class Options
     /// <summary>Writes the 4, 6 or 8 channels the stock game uses. Only needed outside Retro Rewind.</summary>
     public bool MultiChannelSlots { get; set; }
 
-    /// <summary>Writes _f files for stock slots, used when the final lap speed-up setting is off.</summary>
+    /// <summary>Writes _f files for stock slots, made from the song at its final lap speed.</summary>
     public bool StockFinalLapFiles { get; set; } = true;
 
     /// <summary>Evens out songs a little louder on race tracks, because the game's race mix turns music down.</summary>
@@ -44,6 +44,7 @@ public sealed class ProjectRow
     public bool KeepPitch { get; set; }
     public bool Reverb { get; set; }
     public bool KeepFile { get; set; }
+    public double FinalSpeed { get; set; } = PackBuilder.GameFinalSpeed;
 }
 
 public sealed class Project
@@ -78,6 +79,7 @@ public sealed class Project
             KeepPitch = r.KeepPitch,
             Reverb = r.Reverb,
             KeepFile = r.KeepFile,
+            FinalSpeed = r.FinalSpeed,
         }).ToList(),
     };
 
@@ -106,6 +108,7 @@ public sealed class Project
             row.KeepPitch = saved.KeepPitch;
             row.Reverb = saved.Reverb;
             row.KeepFile = saved.KeepFile;
+            row.FinalSpeed = saved.FinalSpeed > 0 ? saved.FinalSpeed : PackBuilder.GameFinalSpeed;
         }
         return unmatched;
     }
@@ -143,6 +146,32 @@ public static class PackBuilder
         .. FasterSpeeds.Select(speed => ($"Faster {SpeedName(speed)}x, same pitch", speed, true, false)),
         .. FasterSpeeds.Select(speed => ($"Nightcore {SpeedName(speed)}x, higher pitch", speed, false, false)),
     ];
+
+    /// <summary>The game plays final laps 6% faster and higher, by raising the playback rate.</summary>
+    public const double GameFinalSpeed = 1.06;
+
+    public static readonly (string Text, double Speed)[] FinalSpeedChoices =
+    [
+        ("A little faster, like the game (1.06x)", GameFinalSpeed),
+        ("Same speed", 1),
+        ("Faster (1.1x)", 1.1),
+        ("Faster (1.15x)", 1.15),
+        ("Much faster (1.2x)", 1.2),
+        ("Much faster (1.25x)", 1.25),
+    ];
+
+    public static int FinalSpeedIndex(double speed) => Math.Max(0, Array.FindIndex(FinalSpeedChoices, choice => choice.Speed == speed));
+
+    /// <summary>The rate written in a final lap file's header. Playing it back faster raises speed and pitch together, like the game.</summary>
+    internal static int FinalRate(int rate, double speed) => Math.Min(ushort.MaxValue, (int)Math.Round(rate * speed));
+
+    /// <summary>
+    /// Retro Rewind plays a track's _Final or _F file on the final lap, at the speed it was written, and only
+    /// speeds up the normal file when there is no such file. So one is written when the track has a final lap
+    /// song, when Retro Rewind has its own file that would otherwise play instead, or when the speed isn't the game's.
+    /// </summary>
+    internal static bool WritesPulsarFinal(TrackRow row) =>
+        row.PulsarFinalBase != null && (row.FinalSource.Length > 0 || row.ExistingFinalFiles.Count > 0 || row.FinalSpeed != GameFinalSpeed);
 
     public static int SpeedIndex(double speed, bool keepPitch, bool reverb = false)
     {
@@ -253,7 +282,6 @@ public static class PackBuilder
                         for (int i = 0; i < plan.Files.Count; i++)
                             File.Copy(Path.Combine(musicFolder, first[i] + ".brstm"), Path.Combine(musicFolder, plan.Files[i] + ".brstm"), true);
                     }
-                    WarnAboutFinal(row, Log);
                     row.Status = "Built";
                     lock (gate)
                         manifest[row.FileBase] = plan.Key;
@@ -299,8 +327,8 @@ public static class PackBuilder
         files.AddRange(row.AliasBases);
         if (row.StockFinalBase != null && (row.FinalSource.Length > 0 || options.StockFinalLapFiles))
             files.Add(row.StockFinalBase);
-        if (row.PulsarFinalBase != null && row.FinalSource.Length > 0)
-            files.Add(row.PulsarFinalBase);
+        if (WritesPulsarFinal(row))
+            files.Add(row.PulsarFinalBase!);
         return files;
     }
 
@@ -338,6 +366,12 @@ public static class PackBuilder
             text += "\nas is";
         if (row.Speed != 1 || row.Reverb)
             text += $"\n{row.Speed.ToString(CultureInfo.InvariantCulture)}\n{row.KeepPitch}\n{row.Reverb}";
+
+        // Final lap files are now written faster, and for tracks where Retro Rewind has its own.
+        if (row.FinalSource.Length > 0 || row.FinalSpeed != GameFinalSpeed)
+            text += $"\nfinal {row.FinalSpeed.ToString(CultureInfo.InvariantCulture)}";
+        if (row.PulsarFinalBase != null && row.ExistingFinalFiles.Count > 0)
+            text += "\nreplaces final";
         return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(text)));
     }
 
@@ -371,14 +405,16 @@ public static class PackBuilder
     {
         static bool IsBrstm(string path) => Path.GetExtension(path).Equals(".brstm", StringComparison.OrdinalIgnoreCase);
         return row.KeepFile && IsBrstm(row.Source) && (row.FinalSource.Length == 0 || IsBrstm(row.FinalSource))
-            && row.Speed == 1 && !row.Reverb && row.VolumeDb == 0 && row.Crossfade == 0 && row.Loop == LoopMode.Auto;
+            && row.Speed == 1 && !row.Reverb && row.VolumeDb == 0 && row.Crossfade == 0 && row.Loop == LoopMode.Auto && row.FinalSpeed == GameFinalSpeed;
     }
 
     /// <summary>Copies the file straight in. Returns false if it can't be used as it is, so it gets encoded instead.</summary>
     private static bool TryCopyAsIs(Options options, TrackRow row, string musicFolder, Action<string> log)
     {
-        // Stock tracks need a final lap file. Without one of its own, it has to be made from the song.
-        if (!UsesFileAsIs(row) || (row.StockFinalBase != null && options.StockFinalLapFiles && row.FinalSource.Length == 0))
+        // Stock tracks need a final lap file, and so do tracks where Retro Rewind has one of its own.
+        // Without one in the pack, it has to be made from the song.
+        bool needsFinal = (row.StockFinalBase != null && options.StockFinalLapFiles) || WritesPulsarFinal(row);
+        if (!UsesFileAsIs(row) || (needsFinal && row.FinalSource.Length == 0))
             return false;
         int channels = options.MultiChannelSlots ? row.StockChannels : 2;
         try
@@ -423,26 +459,20 @@ public static class PackBuilder
         foreach (string file in new[] { row.FileBase }.Concat(row.AliasBases))
             AudioIO.WriteBrstm(song, Path.Combine(musicFolder, file + ".brstm"), channels, rate);
 
-        // Stock slots play their _f file when the final lap speed-up setting is off.
-        if (row.StockFinalBase != null)
+        // A final lap file plays at the speed it's written, so it's written faster: the final lap song if
+        // there is one, otherwise this song. The game would play its own file instead of speeding this one up.
+        bool stockFinal = row.StockFinalBase != null && (row.FinalSource.Length > 0 || options.StockFinalLapFiles);
+        bool pulsarFinal = WritesPulsarFinal(row);
+        if (stockFinal || pulsarFinal)
         {
-            if (row.FinalSource.Length > 0)
-            {
-                var final = Processing.Prepare(row.FinalSource, rate, LoopMode.Auto, "", "", options.Loudness, log, volume, row.Crossfade, row.Speed, row.KeepPitch, row.Reverb);
-                AudioIO.WriteBrstm(final, Path.Combine(musicFolder, row.StockFinalBase + ".brstm"), channels, rate);
-            }
-            else if (options.StockFinalLapFiles)
-            {
-                int fastRate = (int)Math.Round(rate * 1.06);
-                AudioIO.WriteBrstm(song, Path.Combine(musicFolder, row.StockFinalBase + ".brstm"), channels, fastRate);
-            }
-        }
-
-        // Retro Rewind speeds up the normal file by itself, so a final lap file is only for a different song.
-        if (row.PulsarFinalBase != null && row.FinalSource.Length > 0)
-        {
-            var final = Processing.Prepare(row.FinalSource, rate, LoopMode.Auto, "", "", options.Loudness, log, volume, row.Crossfade, row.Speed, row.KeepPitch, row.Reverb);
-            AudioIO.WriteBrstm(final, Path.Combine(musicFolder, row.PulsarFinalBase + ".brstm"), 2, rate);
+            var final = row.FinalSource.Length > 0
+                ? Processing.Prepare(row.FinalSource, rate, LoopMode.Auto, "", "", options.Loudness, log, volume, row.Crossfade, row.Speed, row.KeepPitch, row.Reverb)
+                : song;
+            int finalRate = FinalRate(rate, row.FinalSpeed);
+            if (stockFinal)
+                AudioIO.WriteBrstm(final, Path.Combine(musicFolder, row.StockFinalBase + ".brstm"), channels, finalRate);
+            if (pulsarFinal)
+                AudioIO.WriteBrstm(final, Path.Combine(musicFolder, row.PulsarFinalBase + ".brstm"), 2, finalRate);
         }
 
         string loopText = song.Loop
@@ -450,13 +480,6 @@ public static class PackBuilder
             : "no loop";
         string speedText = row.Speed == 1 && !row.Reverb ? "" : $", {SpeedChoices[SpeedIndex(row.Speed, row.KeepPitch, row.Reverb)].Text}";
         log($"{row.FileBase}.brstm, {rate} Hz, {channels} channels, {AudioIO.FormatTime(seconds)}, {loopText}{speedText}.");
-    }
-
-    private static void WarnAboutFinal(TrackRow row, Action<string> log)
-    {
-        if (row.PulsarFinalBase != null && row.FinalSource.Length == 0 && row.ExistingFinalFiles.Count > 0)
-            log($"Warning: Retro Rewind has {row.ExistingFinalFiles[0]}.brstm for this track. "
-                + "It still plays on the final lap with the speed-up setting off, unless you set a final lap song.");
     }
 
     /// <summary>Gives each track a song from the list in shuffled order, reshuffling if there are more tracks than songs.</summary>

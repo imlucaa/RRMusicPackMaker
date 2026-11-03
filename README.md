@@ -9,7 +9,8 @@ A Windows app for making custom music packs for [Retro Rewind](https://mkwiiki.o
 - Loop editor with a waveform, draggable markers and instant replay of the jump
 - Loop finder, plus a crossfade for songs that have no clean loop
 - Change any song's speed, on one track or the whole pack: slowed and reverb, faster at the same pitch, or nightcore with a higher pitch
-- Editor tab: crop a song by dragging its edges, split it, drag parts to reorder them, drag in other songs to merge them with an optional blend, and save the result as a new song. Delete downloads you no longer want, which sends them to the Recycle Bin
+- Final lap speed for each track, 1.06x like the game by default, up to 1.25x. It also replaces Retro Rewind's own final lap music, which would otherwise play instead of your song
+- Editor tab: crop a song by dragging its edges, split it, drag parts to reorder them, drag in other songs to merge them with an optional blend, change its speed, and save the result as a new song. Delete downloads you no longer want, which sends them to the Recycle Bin
 - Songs tab: every song you import, download or edit, with what it's made from and which tracks use it. Play and pause it, take it off tracks, keep editing it, or delete it
 - A dropdown on each track to pick from your songs
 - Merge songs and make each part play for the same length of time
@@ -20,7 +21,9 @@ A Windows app for making custom music packs for [Retro Rewind](https://mkwiiki.o
 - Sets loop, crossfade, volume and speed on many tracks at once, plays a track's current music, and removes a pack with one click
 - Hear a track's song with its speed, reverb and volume before making the pack, then pause, resume or stop it
 - Keyboard shortcuts: Ctrl+F to search, Delete to remove a song, Space to play and pause, Esc to stop
-- A clean black look like a desktop music player, autosave, and rebuilds that only re-encode what changed
+- A clean black look like a desktop music player, with your own background color, accent color or background picture, and an app size from 75% to 200%
+- A short description of where each menu song and fanfare plays
+- Autosave, and rebuilds that only re-encode what changed
 - Adds the pack to the Patches folder and to Wheel Wizard and Wheel Wizard+, or exports it as a folder or zip anywhere you choose
 - Even volume across songs, louder on race tracks because the game's race mix turns music down, with clean per-song boost or cut
 - The exported folder has install steps and credits inside, for real Wii, Dolphin or sharing

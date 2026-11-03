@@ -29,6 +29,7 @@ internal static class Program
         }
 
         ApplicationConfiguration.Initialize();
+        Theme.Configure(AppStorage.LoadSettings());
         Application.Run(new MainForm());
         return 0;
     }
@@ -77,6 +78,10 @@ internal static class Program
 
     private static int RunCommand(string[] args)
     {
+        // Screenshots can be taken at another app size, to check big and small sizes still fit.
+        if (int.TryParse(Option(args, "--scale"), out int appSize))
+            Theme.Configure(new AppSettings { UiScale = appSize });
+
         switch (args[0])
         {
             case "list":
@@ -201,6 +206,13 @@ internal static class Program
             case "screenshot":
             {
                 ApplicationConfiguration.Initialize();
+                Theme.Configure(new AppSettings
+                {
+                    UiScale = int.TryParse(Option(args, "--scale"), out int scale) ? scale : 100,
+                    AccentColor = Option(args, "--accent") ?? "",
+                    BackgroundColor = Option(args, "--back-color") ?? "",
+                    BackgroundImage = Option(args, "--background") ?? "",
+                });
                 string? project = Option(args, "--project");
                 using var form = new MainForm();
                 form.StartPosition = FormStartPosition.Manual;
