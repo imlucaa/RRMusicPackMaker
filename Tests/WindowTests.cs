@@ -1356,7 +1356,19 @@ public class WindowTests : IDisposable
             form.Close();
         }
 
-        File.Delete(goes);
+        // A background length check from the closing window may still have the file open for a moment.
+        for (int attempt = 0; ; attempt++)
+        {
+            try
+            {
+                File.Delete(goes);
+                break;
+            }
+            catch (IOException) when (attempt < 50)
+            {
+                Thread.Sleep(100);
+            }
+        }
         using var again = OpenWindow();
         var reopening = again.ShowTab(editor: true);
         Pump(() => reopening.IsCompleted);
