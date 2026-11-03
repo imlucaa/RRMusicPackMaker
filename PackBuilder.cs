@@ -709,24 +709,21 @@ public static class PackBuilder
             text.AppendLine($"By {options.Author}");
         text.AppendLine();
         text.AppendLine("INSTALL");
-        text.AppendLine("Real Wii: copy the RetroRewind6 folder from here to the root of your SD card and merge it with the one there.");
-        text.AppendLine("The songs must end up in SD:/RetroRewind6/Patches. No ISO or My Stuff is needed.");
-        text.AppendLine("If they don't play, turn on Loose Archive Overrides in Retro Rewind's settings.");
+        text.AppendLine("Real Wii: copy the songs into SD:/RetroRewind6/strm, and say yes to replace files. No ISO or My Stuff is needed.");
         text.AppendLine();
-        text.AppendLine("Wheel Wizard or Wheel Wizard+: zip this folder, import the zip as a mod, then turn the mod on.");
+        text.AppendLine("Dolphin with Riivolution: copy the songs into Riivolution/WheelWizard/RetroRewind6/strm inside Dolphin's Load folder.");
         text.AppendLine();
-        text.AppendLine("Dolphin with Riivolution: copy the RetroRewind6 folder into your Riivolution folder and merge it with the one there.");
+        text.AppendLine("Wheel Wizard or Wheel Wizard+: use Add to the game in the app, which can also put the originals back later.");
         text.AppendLine();
         text.AppendLine("No sound? Check that Retro Rewind's Music setting isn't set to disable music.");
-        text.AppendLine("Old music still plays? Check that its Loose Archive Overrides setting is on, which is the default.");
         text.AppendLine();
         if (options.OriginalNames)
         {
             text.AppendLine("CTGP OR THE ORIGINAL GAME");
-            text.AppendLine("The My Stuff folder holds the songs for the 32 original tracks under the original game's file names,");
+            text.AppendLine("The songs for the 32 original tracks are also saved under the original game's file names,");
             text.AppendLine("like n_Farm_n.brstm, with final lap files like n_Farm_f.brstm. Retro Rewind doesn't read these.");
-            text.AppendLine("CTGP: copy the My Stuff folder to the root of your SD card, merging it with the one there, and turn My Stuff on in CTGP's settings.");
-            text.AppendLine("Original game on a disc image: the files in My Stuff/sound/strm go in the image's sound/strm.");
+            text.AppendLine("CTGP: copy them into My Stuff/sound/strm on your SD card, and turn My Stuff on in CTGP's settings.");
+            text.AppendLine("Original game on a disc image: put them in the image's sound/strm.");
             text.AppendLine("Luigi Circuit and Mario Circuit share one file in the original game, so one song plays on both.");
             text.AppendLine();
         }
