@@ -249,6 +249,60 @@ public class MatchingTests
         var counts = rows.GroupBy(r => r.Source).Select(g => g.Count()).ToList();
         Assert.True(counts.Max() - counts.Min() <= 1);
     }
+
+    private static List<TrackRow> Tracks(int count) =>
+        Enumerable.Range(0, count).Select(i => new TrackRow { Name = $"T{i}", FileBase = $"{i}_N" }).ToList();
+
+    [Fact]
+    public void FillFromFiles_InOrder_GoesByFileName_WithNumbersCountedAsNumbers()
+    {
+        var rows = Tracks(5);
+        string[] files = ["C:/m/10 ten.mp3", "C:/m/2 two.mp3", "C:/m/1 one.mp3"];
+        int filled = PackBuilder.FillFromFiles(files, rows, FillOrder.InOrder, false, new Random(1));
+        Assert.Equal(5, filled);
+        Assert.Equal(["1 one", "2 two", "10 ten", "1 one", "2 two"], rows.Select(r => r.Song));
+        Assert.All(rows, r => Assert.True(r.IsAssigned));
+    }
+
+    [Fact]
+    public void FillFromFiles_OnlyEmpty_LeavesTracksThatHaveASongAlone()
+    {
+        var rows = Tracks(4);
+        rows[1].Source = "C:/m/mine.mp3";
+        rows[1].Song = "mine";
+        string[] files = ["C:/m/a.mp3", "C:/m/b.mp3", "C:/m/c.mp3"];
+        int filled = PackBuilder.FillFromFiles(files, rows, FillOrder.InOrder, true, new Random(1));
+        Assert.Equal(3, filled);
+        Assert.Equal("C:/m/mine.mp3", rows[1].Source);
+        Assert.Equal(["a", "mine", "b", "c"], rows.Select(r => r.Song));
+    }
+
+    [Fact]
+    public void FillFromFiles_Shuffled_UsesEverySongBeforeRepeating()
+    {
+        var rows = Tracks(6);
+        string[] files = ["C:/m/a.mp3", "C:/m/b.mp3", "C:/m/c.mp3"];
+        PackBuilder.FillFromFiles(files, rows, FillOrder.Shuffled, false, new Random(3));
+        Assert.Equal(3, rows.Take(3).Select(r => r.Source).Distinct().Count());
+        Assert.Equal(3, rows.Skip(3).Select(r => r.Source).Distinct().Count());
+    }
+
+    [Fact]
+    public void FillFromFiles_NoSongs_ChangesNothing()
+    {
+        var rows = Tracks(2);
+        Assert.Equal(0, PackBuilder.FillFromFiles([], rows, FillOrder.InOrder, false, new Random(1)));
+        Assert.All(rows, r => Assert.False(r.IsAssigned));
+    }
+
+    [Theory]
+    [InlineData("2", "10", -1)]
+    [InlineData("track 9", "track 10", -1)]
+    [InlineData("A", "a", 0)]
+    [InlineData("01", "1", 0)]
+    [InlineData("b", "a", 1)]
+    public void NaturalNames_SortsNumbersAsNumbers(string a, string b, int expected) =>
+        Assert.Equal(expected, Math.Sign(NaturalNames.Instance.Compare(a, b)));
 }
 
 public class ProcessingTests
@@ -562,6 +616,87 @@ public class BuildTests : IDisposable
     }
 
     private string Music(string name) => Path.Combine(_folder, "T", "RetroRewind6", "Patches", name + ".brstm");
+
+    private string Original(string name) => Path.Combine(_folder, "T", "My Stuff", "sound", "strm", name + ".brstm");
+
+    [Fact]
+    public void OriginalNames_All32RegsGetTheirOwnStockFile_AndMatchTheirName()
+    {
+        var regs = Catalog.Build(null, out _).Where(row => row.Category == Catalog.CatRegs).ToList();
+        Assert.Equal(32, regs.Count);
+        Assert.All(regs, row => Assert.NotNull(row.OriginalBase));
+        // Luigi Circuit and Mario Circuit share n_Circuit32_n, so 32 tracks use 31 files.
+        Assert.Equal(31, regs.Select(row => row.OriginalBase!.ToLowerInvariant()).Distinct().Count());
+        string FileOf(string name) => regs.Single(row => row.Name == name).OriginalBase!;
+        Assert.Equal("n_Farm_n", FileOf("Wii Moo Moo Meadows"));
+        Assert.Equal("n_Shopping32_n", FileOf("Wii Coconut Mall"));
+        Assert.Equal("r_GC_Beach32_n", FileOf("GCN Peach Beach"));
+        Assert.Equal("r_64_Kuppa32_n", FileOf("N64 Bowser's Castle"));
+        Assert.Equal("n_Circuit32_n", FileOf("Wii Luigi Circuit"));
+        Assert.Equal("n_Circuit32_n", FileOf("Wii Mario Circuit"));
+        Assert.Equal("n_Farm_f", regs.Single(row => row.Name == "Wii Moo Moo Meadows").OriginalFinalBase);
+    }
+
+    private TrackRow OriginalRow(string file, string original) => new()
+    {
+        Name = file,
+        FileBase = file,
+        Source = _wav,
+        PulsarFinalBase = file + "x",
+        OriginalBase = original,
+        OriginalFinalBase = Catalog.FinalNameOf(original),
+    };
+
+    [Fact]
+    public void Build_OriginalNamesOn_WritesTheStockFileAndItsFinalLap()
+    {
+        var row = OriginalRow("89_N", "n_Farm_n");
+        PackBuilder.Build(new Options { PackName = "T", OriginalNames = true }, [row], _folder, _ => { });
+        Assert.True(File.Exists(Music("89_N")));
+        Assert.True(File.Exists(Original("n_Farm_n")));
+        Assert.True(File.Exists(Original("n_Farm_f")));
+        Assert.False(File.Exists(Music("n_Farm_n")));
+        Assert.False(File.Exists(Music("n_Farm_f")));
+    }
+
+    [Fact]
+    public void Build_OriginalNamesOff_WritesOnlyRetroRewindNames()
+    {
+        var row = OriginalRow("89_N", "n_Farm_n");
+        PackBuilder.Build(new Options { PackName = "T" }, [row], _folder, _ => { });
+        Assert.True(File.Exists(Music("89_N")));
+        Assert.False(File.Exists(Original("n_Farm_n")));
+        Assert.False(File.Exists(Original("n_Farm_f")));
+        Assert.False(Directory.Exists(Path.Combine(_folder, "T", "My Stuff")));
+    }
+
+    [Fact]
+    public void Build_OriginalNames_TurnedOnLater_AddsTheFilesWithoutLosingTheOthers()
+    {
+        var row = OriginalRow("89_N", "n_Farm_n");
+        PackBuilder.Build(new Options { PackName = "T" }, [row], _folder, _ => { });
+        PackBuilder.Build(new Options { PackName = "T", OriginalNames = true }, [row], _folder, _ => { });
+        Assert.True(File.Exists(Music("89_N")));
+        Assert.True(File.Exists(Original("n_Farm_n")));
+        PackBuilder.Build(new Options { PackName = "T" }, [row], _folder, _ => { });
+        Assert.False(File.Exists(Original("n_Farm_n")));
+        Assert.False(Directory.Exists(Path.Combine(_folder, "T", "My Stuff")));
+    }
+
+    [Fact]
+    public void Build_OriginalNames_SharedFile_GoesToTheFirstTrackWithASong_WithoutFailing()
+    {
+        var luigi = OriginalRow("88_N", "n_Circuit32_n");
+        var mario = OriginalRow("92_N", "n_Circuit32_n");
+        var result = PackBuilder.Build(new Options { PackName = "T", OriginalNames = true }, [luigi, mario], _folder, _ => { });
+        Assert.Equal(0, result.Failed);
+        Assert.True(luigi.OriginalActive);
+        Assert.False(mario.OriginalActive);
+        Assert.True(File.Exists(Original("n_Circuit32_n")));
+        // With only Mario Circuit given a song, it gets the shared file.
+        PackBuilder.Build(new Options { PackName = "T", OriginalNames = true }, [mario], _folder, _ => { });
+        Assert.True(mario.OriginalActive);
+    }
 
     [Fact]
     public void Build_SameSongOnManyTracks_EncodesOnceAndCopies()
@@ -1180,40 +1315,67 @@ public class BuildTests : IDisposable
     }
 
     [Fact]
-    public void ExportFolder_CopiesTheWholePack_IntoAFolderNamedAfterIt()
+    public void ExportFolder_PutsTheSongsStraightInTheFolder_WithNoFoldersAroundThem()
     {
         var result = Run(Row("1_N"));
-        string target = PackBuilder.ExportFolder(result.Folder, Path.Combine(_folder, "usb"));
-        Assert.Equal(Path.Combine(_folder, "usb", "T"), target);
-        Assert.True(File.Exists(Path.Combine(target, "RetroRewind6", "Patches", "1_N.brstm")));
-        Assert.True(File.Exists(Path.Combine(target, "README.txt")));
-        Assert.True(File.Exists(Path.Combine(target, "credits.csv")));
-    }
-
-    [Fact]
-    public void ExportFolder_AgainAfterRemovingASong_RemovesThatSong_KeepsOtherFiles()
-    {
-        var keep = Row("1_N");
-        var first = Run(keep, Row("2_N"));
         string destination = Path.Combine(_folder, "usb");
-        string target = PackBuilder.ExportFolder(first.Folder, destination);
-        File.WriteAllText(Path.Combine(target, "my notes.txt"), "mine");
-
-        var second = Run(keep);
-        PackBuilder.ExportFolder(second.Folder, destination);
-
-        Assert.False(File.Exists(Path.Combine(target, "RetroRewind6", "Patches", "2_N.brstm")));
-        Assert.True(File.Exists(Path.Combine(target, "RetroRewind6", "Patches", "1_N.brstm")));
-        Assert.Equal("mine", File.ReadAllText(Path.Combine(target, "my notes.txt")));
+        string target = PackBuilder.ExportFolder(result.Folder, destination);
+        Assert.Equal(destination, target);
+        Assert.True(File.Exists(Path.Combine(target, "1_N.brstm")));
+        Assert.Empty(Directory.GetDirectories(target));
+        Assert.False(File.Exists(Path.Combine(target, "README.txt")));
     }
 
     [Fact]
-    public void ExportFolder_ToWhereThePackAlreadyIs_LeavesItAlone()
+    public void ExportFolder_ReplacesSongsWithTheSameName_AndLeavesEverythingElse()
     {
         var result = Run(Row("1_N"));
-        string target = PackBuilder.ExportFolder(result.Folder, _folder);
-        Assert.Equal(Path.GetFullPath(result.Folder), target);
-        Assert.True(File.Exists(Path.Combine(result.MusicFolder, "1_N.brstm")));
+        string destination = Path.Combine(_folder, "usb");
+        Directory.CreateDirectory(destination);
+        File.WriteAllText(Path.Combine(destination, "1_N.brstm"), "old");
+        File.WriteAllText(Path.Combine(destination, "other.brstm"), "mine");
+        File.WriteAllText(Path.Combine(destination, "my notes.txt"), "mine");
+
+        PackBuilder.ExportFolder(result.Folder, destination);
+
+        Assert.NotEqual("old", File.ReadAllText(Path.Combine(destination, "1_N.brstm")));
+        Assert.Equal("mine", File.ReadAllText(Path.Combine(destination, "other.brstm")));
+        Assert.Equal("mine", File.ReadAllText(Path.Combine(destination, "my notes.txt")));
+    }
+
+    [Fact]
+    public void ExportFolder_WithOriginalNames_PutsBothKindsOfNameInTheSameFolder()
+    {
+        var row = OriginalRow("89_N", "n_Farm_n");
+        var result = PackBuilder.Build(new Options { PackName = "T", OriginalNames = true }, [row], _folder, _ => { });
+        string target = PackBuilder.ExportFolder(result.Folder, Path.Combine(_folder, "usb"));
+        Assert.True(File.Exists(Path.Combine(target, "89_N.brstm")));
+        Assert.True(File.Exists(Path.Combine(target, "n_Farm_n.brstm")));
+        Assert.True(File.Exists(Path.Combine(target, "n_Farm_f.brstm")));
+        Assert.Empty(Directory.GetDirectories(target));
+    }
+
+    [Fact]
+    public void ExportZip_HasEverythingAtTheTop_WithNoFolders()
+    {
+        var row = OriginalRow("89_N", "n_Farm_n");
+        var result = PackBuilder.Build(new Options { PackName = "T", OriginalNames = true }, [row], _folder, _ => { });
+        string zip = Path.Combine(_folder, "pack.zip");
+        PackBuilder.ExportZip(result.Folder, zip);
+        using var archive = System.IO.Compression.ZipFile.OpenRead(zip);
+        var names = archive.Entries.Select(entry => entry.FullName).ToList();
+        Assert.Contains("89_N.brstm", names);
+        Assert.Contains("n_Farm_n.brstm", names);
+        Assert.Contains("n_Farm_f.brstm", names);
+        Assert.Contains("credits.csv", names);
+        Assert.DoesNotContain(names, name => name.Contains('/') || name.Contains('\\'));
+    }
+
+    [Fact]
+    public void ExportFolder_ToWhereThePackAlreadyIs_IsRefused()
+    {
+        var result = Run(Row("1_N"));
+        Assert.Throws<IOException>(() => PackBuilder.ExportFolder(result.Folder, result.Folder));
     }
 
     [Fact]

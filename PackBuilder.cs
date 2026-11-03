@@ -20,6 +20,12 @@ public sealed class Options
     /// <summary>Writes the 4, 6 or 8 channels the stock game uses. Only needed outside Retro Rewind.</summary>
     public bool MultiChannelSlots { get; set; }
 
+    /// <summary>
+    /// Also writes the original game's file names for the 32 original tracks, like n_Farm_n, with their final lap
+    /// files. For CTGP and the original game, which read those names. Retro Rewind doesn't use them.
+    /// </summary>
+    public bool OriginalNames { get; set; }
+
     /// <summary>Writes _f files for stock slots, made from the song at its final lap speed.</summary>
     public bool StockFinalLapFiles { get; set; } = true;
 
@@ -243,9 +249,12 @@ public static class PackBuilder
         if (work.Count == 0)
             throw new InvalidOperationException("No songs are assigned. Add a song to at least one track first.");
 
+        MarkOriginalWriters(options, rows, work);
+
         string name = SafeName(options.PackName);
         string packFolder = Path.Combine(outputFolder, name);
         string musicFolder = Path.Combine(packFolder, "RetroRewind6", "Patches");
+        string originalFolder = OriginalFolder(packFolder);
 
         // Packs built by older versions kept their songs in MyStuff. Reuse them, and keep that folder out of the zip.
         string oldFolder = Path.Combine(packFolder, "RetroRewind6", "MyStuff");
@@ -260,7 +269,20 @@ public static class PackBuilder
 
         string manifestPath = Path.Combine(outputFolder, name + ".build.json");
         var manifest = LoadManifest(manifestPath);
-        var plans = work.Select(row => (Row: row, Key: BuildKey(options, row), Files: ExpectedFiles(options, row))).ToList();
+        var plans = work.Select(row => (Row: row, Key: BuildKey(options, row), Files: ExpectedFiles(options, row), Originals: ExpectedOriginalFiles(options, row))).ToList();
+
+        // The same for the original names: songs from tracks that lost theirs go, and with the option off the folder goes.
+        var expectedOriginals = new HashSet<string>(plans.SelectMany(plan => plan.Originals), StringComparer.OrdinalIgnoreCase);
+        if (Directory.Exists(originalFolder))
+        {
+            foreach (string old in Directory.GetFiles(originalFolder, "*.brstm"))
+                if (!expectedOriginals.Contains(Path.GetFileNameWithoutExtension(old)))
+                    File.Delete(old);
+            if (expectedOriginals.Count == 0)
+                RemoveEmptyFolders(Path.Combine(packFolder, "My Stuff"));
+        }
+        if (expectedOriginals.Count > 0)
+            Directory.CreateDirectory(originalFolder);
 
         // Files from tracks that no longer have a song must not stay in the pack.
         var expected = new HashSet<string>(plans.SelectMany(plan => plan.Files), StringComparer.OrdinalIgnoreCase);
@@ -270,12 +292,13 @@ public static class PackBuilder
         foreach (string key in manifest.Keys.Where(key => !work.Any(row => row.FileBase == key)).ToList())
             manifest.Remove(key);
 
-        var pending = new List<(TrackRow Row, string Key, List<string> Files)>();
+        var pending = new List<(TrackRow Row, string Key, List<string> Files, List<string> Originals)>();
         int unchanged = 0;
         foreach (var plan in plans)
         {
             bool current = manifest.TryGetValue(plan.Row.FileBase, out string? saved) && saved == plan.Key
-                && plan.Files.All(file => File.Exists(Path.Combine(musicFolder, file + ".brstm")));
+                && plan.Files.All(file => File.Exists(Path.Combine(musicFolder, file + ".brstm")))
+                && plan.Originals.All(file => File.Exists(Path.Combine(originalFolder, file + ".brstm")));
             if (current)
             {
                 plan.Row.Status = "Built";
@@ -308,7 +331,7 @@ public static class PackBuilder
                 {
                     if (!encodedGroup)
                     {
-                        BuildRow(options, row, musicFolder, Log);
+                        BuildRow(options, row, musicFolder, originalFolder, Log);
                         encodedGroup = true;
                         Interlocked.Increment(ref encoded);
                     }
@@ -317,6 +340,9 @@ public static class PackBuilder
                         var first = members[0].Files;
                         for (int i = 0; i < plan.Files.Count; i++)
                             File.Copy(Path.Combine(musicFolder, first[i] + ".brstm"), Path.Combine(musicFolder, plan.Files[i] + ".brstm"), true);
+                        var firstOriginals = members[0].Originals;
+                        for (int i = 0; i < plan.Originals.Count; i++)
+                            File.Copy(Path.Combine(originalFolder, firstOriginals[i] + ".brstm"), Path.Combine(originalFolder, plan.Originals[i] + ".brstm"), true);
                     }
                     row.Status = "Built";
                     lock (gate)
@@ -340,6 +366,17 @@ public static class PackBuilder
 
         long bytes = Directory.GetFiles(musicFolder, "*.brstm").Sum(f => new FileInfo(f).Length);
         return new BuildResult(packFolder, musicFolder, work.Count - failed, failed, bytes, unchanged, encoded);
+    }
+
+    /// <summary>Deletes a folder and the empty folders inside it. Does nothing if anything else is in there.</summary>
+    private static void RemoveEmptyFolders(string folder)
+    {
+        if (!Directory.Exists(folder))
+            return;
+        foreach (string inner in Directory.GetDirectories(folder))
+            RemoveEmptyFolders(inner);
+        if (!Directory.EnumerateFileSystemEntries(folder).Any())
+            Directory.Delete(folder);
     }
 
     private static Dictionary<string, string> LoadManifest(string path)
@@ -367,6 +404,40 @@ public static class PackBuilder
             files.Add(row.PulsarFinalBase!);
         return files;
     }
+
+    /// <summary>The file names a track writes for CTGP and the original game, in My Stuff/sound/strm. Empty unless turned on.</summary>
+    internal static List<string> ExpectedOriginalFiles(Options options, TrackRow row)
+    {
+        var files = new List<string>();
+        if (row.OriginalActive)
+        {
+            files.Add(row.OriginalBase!);
+            if (WritesOriginalFinal(options, row))
+                files.Add(row.OriginalFinalBase!);
+        }
+        return files;
+    }
+
+    /// <summary>Where a pack keeps the songs for CTGP and the original game. It mirrors the game's own layout, so it can be copied as it is.</summary>
+    public static string OriginalFolder(string packFolder) => Path.Combine(packFolder, "My Stuff", "sound", "strm");
+
+    /// <summary>
+    /// Decides which rows write the original file names. Luigi Circuit and Mario Circuit share one file, so the
+    /// first of them with a song gets it, and the other leaves it alone rather than fight over it.
+    /// </summary>
+    internal static void MarkOriginalWriters(Options options, IEnumerable<TrackRow> all, IEnumerable<TrackRow> assigned)
+    {
+        foreach (var row in all)
+            row.OriginalActive = false;
+        var taken = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in assigned)
+            row.OriginalActive = options.OriginalNames && row.OriginalBase != null && taken.Add(row.OriginalBase);
+    }
+
+    private static bool WritesOriginalFinal(Options options, TrackRow row) =>
+        row.OriginalActive && row.OriginalFinalBase != null && (row.FinalSource.Length > 0 || options.StockFinalLapFiles);
+
+    private static int OriginalChannelsFor(Options options, TrackRow row) => options.MultiChannelSlots ? row.OriginalChannels : 2;
 
     /// <summary>Changes whenever the track's output would change. Two tracks with the same key produce the same audio.</summary>
     internal static string BuildKey(Options options, TrackRow row)
@@ -413,6 +484,8 @@ public static class PackBuilder
         }
         if (row.PulsarFinalBase != null && row.ExistingFinalFiles.Count > 0)
             text += "\nreplaces final";
+        if (row.OriginalActive)
+            text += $"\noriginal {row.OriginalBase}|{WritesOriginalFinal(options, row)}|{OriginalChannelsFor(options, row)}";
         return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(text)));
     }
 
@@ -476,14 +549,17 @@ public static class PackBuilder
     }
 
     /// <summary>Copies the file straight in. Returns false if it can't be used as it is, so it gets encoded instead.</summary>
-    private static bool TryCopyAsIs(Options options, TrackRow row, string musicFolder, Action<string> log)
+    private static bool TryCopyAsIs(Options options, TrackRow row, string musicFolder, string originalFolder, Action<string> log)
     {
         // Stock tracks need a final lap file, and so do tracks where Retro Rewind has one of its own.
         // Without one in the pack, it has to be made from the song.
-        bool needsFinal = (row.StockFinalBase != null && options.StockFinalLapFiles) || WritesPulsarFinal(row);
+        bool needsFinal = (row.StockFinalBase != null && options.StockFinalLapFiles) || WritesPulsarFinal(row) || WritesOriginalFinal(options, row);
         if (!UsesFileAsIs(row) || (needsFinal && row.FinalSource.Length == 0))
             return false;
         int channels = options.MultiChannelSlots ? row.StockChannels : 2;
+        // A file with the wrong number of channels for the original name has to be made again.
+        if (row.OriginalActive && OriginalChannelsFor(options, row) != channels)
+            return false;
         try
         {
             var summary = AudioIO.ReadBrstmSummary(row.Source);
@@ -502,13 +578,20 @@ public static class PackBuilder
         string? finalBase = row.StockFinalBase ?? row.PulsarFinalBase;
         if (finalBase != null && row.FinalSource.Length > 0)
             File.Copy(row.FinalSource, Path.Combine(musicFolder, finalBase + ".brstm"), true);
+        if (row.OriginalActive)
+        {
+            Directory.CreateDirectory(originalFolder);
+            File.Copy(row.Source, Path.Combine(originalFolder, row.OriginalBase + ".brstm"), true);
+            if (WritesOriginalFinal(options, row))
+                File.Copy(row.FinalSource, Path.Combine(originalFolder, row.OriginalFinalBase + ".brstm"), true);
+        }
         log($"{row.FileBase}.brstm, kept as it was in the pack.");
         return true;
     }
 
-    private static void BuildRow(Options options, TrackRow row, string musicFolder, Action<string> log)
+    private static void BuildRow(Options options, TrackRow row, string musicFolder, string originalFolder, Action<string> log)
     {
-        if (File.Exists(row.Source) && TryCopyAsIs(options, row, musicFolder, log))
+        if (File.Exists(row.Source) && TryCopyAsIs(options, row, musicFolder, originalFolder, log))
             return;
 
         double volume = EffectiveVolumeDb(options, row);
@@ -534,7 +617,13 @@ public static class PackBuilder
         // there is one, otherwise this song. The game would play its own file instead of speeding this one up.
         bool stockFinal = row.StockFinalBase != null && (row.FinalSource.Length > 0 || options.StockFinalLapFiles);
         bool pulsarFinal = WritesPulsarFinal(row);
-        if (stockFinal || pulsarFinal)
+        bool originalFinal = WritesOriginalFinal(options, row);
+        if (row.OriginalActive)
+        {
+            Directory.CreateDirectory(originalFolder);
+            AudioIO.WriteBrstm(song, Path.Combine(originalFolder, row.OriginalBase + ".brstm"), OriginalChannelsFor(options, row), rate);
+        }
+        if (stockFinal || pulsarFinal || originalFinal)
         {
             var (finalSongSpeed, finalKeepPitch, finalReverb) = FinalSongSpeedOf(row);
             double finalVolume = row.FinalVolumeDb is int own ? EffectiveVolumeDb(options, row, own) : volume;
@@ -546,6 +635,8 @@ public static class PackBuilder
                 AudioIO.WriteBrstm(final, Path.Combine(musicFolder, row.StockFinalBase + ".brstm"), channels, finalRate);
             if (pulsarFinal)
                 AudioIO.WriteBrstm(final, Path.Combine(musicFolder, row.PulsarFinalBase + ".brstm"), 2, finalRate);
+            if (originalFinal)
+                AudioIO.WriteBrstm(final, Path.Combine(originalFolder, row.OriginalFinalBase + ".brstm"), OriginalChannelsFor(options, row), finalRate);
         }
 
         string loopText = song.Loop
@@ -570,6 +661,35 @@ public static class PackBuilder
             row.Song = Path.GetFileNameWithoutExtension(file);
             row.Status = "";
         }
+    }
+
+    /// <summary>
+    /// Gives each track a song from the list, one after another, going back to the start when the songs run out.
+    /// Shuffled mixes the songs first, and mixes again each time they run out. In order goes by file name, with
+    /// 2 before 10. With onlyEmpty, tracks that already have a song are skipped. Returns how many tracks were filled.
+    /// </summary>
+    public static int FillFromFiles(IReadOnlyList<string> files, IEnumerable<TrackRow> rows, FillOrder order, bool onlyEmpty, Random random)
+    {
+        if (files.Count == 0)
+            return 0;
+        var sorted = files.OrderBy(file => Path.GetFileName(file), NaturalNames.Instance).ToList();
+        var queue = new Queue<string>();
+        int filled = 0;
+        foreach (var row in rows)
+        {
+            if (onlyEmpty && row.IsAssigned)
+                continue;
+            if (queue.Count == 0)
+                foreach (string file in order == FillOrder.InOrder ? sorted : files.OrderBy(_ => random.Next()).ToList())
+                    queue.Enqueue(file);
+            string song = queue.Dequeue();
+            row.Source = song;
+            row.KeepFile = false;
+            row.Song = Path.GetFileNameWithoutExtension(song);
+            row.Status = "";
+            filled++;
+        }
+        return filled;
     }
 
     private static void WriteCredits(string path, IEnumerable<TrackRow> rows)
@@ -600,6 +720,16 @@ public static class PackBuilder
         text.AppendLine("No sound? Check that Retro Rewind's Music setting isn't set to disable music.");
         text.AppendLine("Old music still plays? Check that its Loose Archive Overrides setting is on, which is the default.");
         text.AppendLine();
+        if (options.OriginalNames)
+        {
+            text.AppendLine("CTGP OR THE ORIGINAL GAME");
+            text.AppendLine("The My Stuff folder holds the songs for the 32 original tracks under the original game's file names,");
+            text.AppendLine("like n_Farm_n.brstm, with final lap files like n_Farm_f.brstm. Retro Rewind doesn't read these.");
+            text.AppendLine("CTGP: copy the My Stuff folder to the root of your SD card, merging it with the one there, and turn My Stuff on in CTGP's settings.");
+            text.AppendLine("Original game on a disc image: the files in My Stuff/sound/strm go in the image's sound/strm.");
+            text.AppendLine("Luigi Circuit and Mario Circuit share one file in the original game, so one song plays on both.");
+            text.AppendLine();
+        }
         text.AppendLine("TRACKS");
         foreach (var row in rows)
             text.AppendLine(row.Song.Length > 0 ? $"{row.Name}: {row.Song}{(row.Credits.Length > 0 ? $" ({row.Credits})" : "")}" : row.Name);
@@ -661,44 +791,50 @@ public static class PackBuilder
         return files.Length;
     }
 
-    /// <summary>Zips the built pack with the same layout as an exported folder. A half-written zip never replaces a good one.</summary>
+    /// <summary>
+    /// Every song the pack made: the ones for Retro Rewind, and the ones for CTGP and the original game when those
+    /// were turned on. Exports hand these over on their own, without the folders they're kept in here.
+    /// </summary>
+    public static List<string> ExportedSongs(string packFolder)
+    {
+        var songs = new List<string>();
+        foreach (string folder in new[] { Path.Combine(packFolder, "RetroRewind6", "Patches"), OriginalFolder(packFolder) })
+            if (Directory.Exists(folder))
+                songs.AddRange(Directory.GetFiles(folder, "*.brstm"));
+        return songs;
+    }
+
+    /// <summary>Saves the pack's songs, and the credits list, as a zip with everything at the top, in no folder. A half-written zip never replaces a good one.</summary>
     public static void ExportZip(string packFolder, string zipPath)
     {
         string temp = zipPath + ".tmp";
         File.Delete(temp);
-        System.IO.Compression.ZipFile.CreateFromDirectory(packFolder, temp, System.IO.Compression.CompressionLevel.Fastest, false);
+        using (var zip = System.IO.Compression.ZipFile.Open(temp, System.IO.Compression.ZipArchiveMode.Create))
+        {
+            foreach (string song in ExportedSongs(packFolder))
+                System.IO.Compression.ZipFileExtensions.CreateEntryFromFile(zip, song, Path.GetFileName(song), System.IO.Compression.CompressionLevel.Fastest);
+            // The song names and credits ride along, so whoever imports the zip sees titles and not file names.
+            string credits = Path.Combine(packFolder, "credits.csv");
+            if (File.Exists(credits))
+                System.IO.Compression.ZipFileExtensions.CreateEntryFromFile(zip, credits, "credits.csv", System.IO.Compression.CompressionLevel.Fastest);
+        }
         File.Move(temp, zipPath, true);
     }
 
-    /// <summary>The folder an export to this destination creates.</summary>
-    public static string ExportTarget(string packFolder, string destination) =>
-        Path.Combine(destination, Path.GetFileName(packFolder.TrimEnd('\\', '/')));
-
     /// <summary>
-    /// Copies the built pack into a folder of the user's choosing, as a folder named after the pack.
-    /// Songs left from an older export of this pack are replaced. Anything else there stays.
+    /// Copies the pack's songs straight into a folder of the user's choosing, with no folders around them. Songs with
+    /// the same name are replaced. Nothing else there is touched, since the folder may be the game's own.
     /// </summary>
     public static string ExportFolder(string packFolder, string destination)
     {
         string source = Path.GetFullPath(packFolder).TrimEnd(Path.DirectorySeparatorChar);
-        string target = Path.GetFullPath(ExportTarget(packFolder, destination)).TrimEnd(Path.DirectorySeparatorChar);
-        if (target.Equals(source, StringComparison.OrdinalIgnoreCase))
-            return target;
-        string sourcePrefix = source + Path.DirectorySeparatorChar;
-        if (target.StartsWith(sourcePrefix, StringComparison.OrdinalIgnoreCase))
+        string target = Path.GetFullPath(destination).TrimEnd(Path.DirectorySeparatorChar);
+        if (target.Equals(source, StringComparison.OrdinalIgnoreCase) || target.StartsWith(source + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
             throw new IOException("Pick a folder outside the pack itself.");
 
-        string music = Path.Combine(target, "RetroRewind6", "Patches");
-        if (Directory.Exists(music))
-            foreach (string old in Directory.GetFiles(music, "*.brstm"))
-                File.Delete(old);
-
-        foreach (string file in Directory.GetFiles(source, "*", SearchOption.AllDirectories))
-        {
-            string destinationFile = Path.Combine(target, Path.GetRelativePath(source, file));
-            Directory.CreateDirectory(Path.GetDirectoryName(destinationFile)!);
-            File.Copy(file, destinationFile, true);
-        }
+        Directory.CreateDirectory(target);
+        foreach (string song in ExportedSongs(packFolder))
+            File.Copy(song, Path.Combine(target, Path.GetFileName(song)), true);
         return target;
     }
 

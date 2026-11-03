@@ -31,6 +31,24 @@ public sealed class TrackRow
     /// <summary>Channels the stock game expects in this slot.</summary>
     public int StockChannels { get; init; } = 2;
 
+    /// <summary>
+    /// For one of the 32 original tracks: the file name the original game and CTGP use for its music, like n_Farm_n.
+    /// Written as well when the pack is for those. Retro Rewind itself only reads its own numbered file.
+    /// </summary>
+    public string? OriginalBase { get; init; }
+
+    /// <summary>The final lap file that goes with <see cref="OriginalBase"/>.</summary>
+    public string? OriginalFinalBase { get; init; }
+
+    /// <summary>Channels the original game expects in that file.</summary>
+    public int OriginalChannels { get; init; } = 2;
+
+    /// <summary>
+    /// Set while a pack is built: true when this row writes the original file names. Luigi Circuit and Mario Circuit
+    /// share one file, so only the first of them that has a song writes it.
+    /// </summary>
+    public bool OriginalActive { get; set; }
+
     public int? FixedRate { get; init; }
     public bool DefaultNoLoop { get; init; }
     public string Note { get; set; } = "";
@@ -345,9 +363,16 @@ public static class Catalog
                 string shownName = version ?? track.Name;
                 string variantOf = version != null ? MainName(track.Name) : "";
                 string variantNote = variantOf.Length > 0 ? $"Version of {variantOf}. " : "";
+                string rowCategory = category == CatRetro && IsReg(track.Name) ? CatRegs : category;
+                var original = rowCategory == CatRegs && track.Variant == 0
+                    ? StockRace.FirstOrDefault(slot => slot.Slots.Contains(track.MusicSlot))
+                    : null;
                 var row = new TrackRow
                 {
-                    Category = category == CatRetro && IsReg(track.Name) ? CatRegs : category,
+                    Category = rowCategory,
+                    OriginalBase = original?.File,
+                    OriginalFinalBase = original == null ? null : FinalNameOf(original.File),
+                    OriginalChannels = original?.Channels ?? 2,
                     Platform = PlatformOf(MainName(shownName)),
                     Name = shownName,
                     VariantOf = variantOf,

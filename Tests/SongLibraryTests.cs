@@ -206,4 +206,22 @@ public sealed class SongLibraryTests : IDisposable
     [InlineData(@"C:\x\Plain.wav", "Plain")]
     public void DisplayName_DropsOnlyTheVideoId(string path, string expected) =>
         Assert.Equal(expected, SongLibrary.DisplayName(path));
+
+    [Fact]
+    public void QuickLength_ReadsABrstmHeaderWithoutFfprobe()
+    {
+        // Smallest header the reader accepts: RSTM, HEAD chunk at 0x40, stream info 0x20 into it.
+        var data = new byte[0x100];
+        "RSTM"u8.CopyTo(data);
+        void Put(int at, int value) { for (int i = 0; i < 4; i++) data[at + i] = (byte)(value >> (24 - 8 * i)); }
+        Put(0x10, 0x40);
+        Put(0x40 + 0x0C, 0x20 - 8);
+        int info = 0x40 + 8 + (0x20 - 8);
+        data[info + 4] = 0x5D; data[info + 5] = 0xC0; // 24000 Hz
+        Put(info + 12, 240000);                        // 10 seconds
+        string path = Path.Combine(_data, "q.brstm");
+        File.WriteAllBytes(path, data);
+        Assert.Equal(10.0, AudioIO.QuickLength(path)!.Value, 3);
+        Assert.Null(AudioIO.QuickLength(Path.Combine(_data, "x.mp3")));
+    }
 }
