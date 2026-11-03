@@ -246,13 +246,6 @@ internal static class Program
                 form.Close();
                 return 0;
             }
-            case "preview":
-            {
-                // Fetches a real preview without playing it, to check it still works against YouTube.
-                string file = Downloader.PreviewAsync(args[1], Console.WriteLine, CancellationToken.None).GetAwaiter().GetResult();
-                File.Move(file, args[2], true);
-                return 0;
-            }
             case "import-check":
             {
                 // Shows what an import would match, without changing anything.
@@ -362,7 +355,7 @@ internal static class Program
             case "screenshot-export":
             {
                 ApplicationConfiguration.Initialize();
-                using var export = new ExportForm(wheelWizardFound: true);
+                using var export = new ExportForm(gameFound: true);
                 export.StartPosition = FormStartPosition.Manual;
                 export.Location = new Point(-5000, -5000);
                 export.Show();

@@ -112,6 +112,14 @@ public sealed partial class SongLibrary
         return output != null && PackImporter.IsImportedCopy(path, output);
     }
 
+    /// <summary>True for songs copied in when a pack was imported. They're already on their tracks, so the track dropdown leaves them out.</summary>
+    public bool IsFromImportedPack(string path)
+    {
+        string downloads = Path.GetFullPath(_downloadsFolder()).TrimEnd(Path.DirectorySeparatorChar);
+        string? output = Path.GetDirectoryName(downloads);
+        return output != null && PackImporter.IsImportedCopy(path, output);
+    }
+
     public SongKind KindOf(string path) =>
         _edits.ContainsKey(Path.GetFullPath(path)) ? SongKind.Edited
         : IsDownload(path) ? SongKind.Downloaded

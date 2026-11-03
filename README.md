@@ -16,15 +16,18 @@ A Windows app for making custom music packs for [Retro Rewind](https://mkwiiki.o
 - Merge songs and make each part play for the same length of time
 - Import a pack from what's on your PC, any folder or zip, or single song files, and its songs go back on their tracks. Imported songs stay exactly as they were unless you change their settings. Delete any pack from the same list, which keeps non-music files like karts, and listen to any imported song
 - Assign one song to many tracks, or spread a folder of songs across them
-- Search YouTube Music and YouTube for anything, with official songs first, and hear a preview before downloading. You can also paste a link
+- Several packs at once: a dropdown in the top bar switches between them, importing a second pack opens it on its own instead of replacing the first, and Save and Delete pack keep or remove one. Work is also saved by itself as you go
+- Select many songs in the Songs tab and delete them or take them off their tracks together
+- Search YouTube Music and YouTube for anything, with official songs first, and pick the audio quality, from the best a video has down to 64 kbps. You can also paste a link
 - Shows setup problems in the log, like music turned off in the game, and marks song files that went missing
-- Sets loop, crossfade, volume and speed on many tracks at once, plays a track's current music, and removes a pack with one click
+- Sets loop, crossfade, volume and speed on many tracks at once, with Louder and Quieter buttons in 1 dB steps, plays a track's current music, and removes a pack with one click
+- The song picked for the final lap has its own volume and speed, and you can hear the final lap before making the pack
 - Hear a track's song with its speed, reverb and volume before making the pack, then pause, resume or stop it
 - Keyboard shortcuts: Ctrl+F to search, Delete to remove a song, Space to play and pause, Esc to stop
 - A clean black look like a desktop music player, with your own background color, accent color or background picture, and an app size from 75% to 200%
 - A short description of where each menu song and fanfare plays
 - Autosave, and rebuilds that only re-encode what changed
-- Adds the pack to the Patches folder and to Wheel Wizard and Wheel Wizard+, or exports it as a folder or zip anywhere you choose
+- Export for a Wii or for Dolphin. For a Wii, songs above 44100 Hz are converted down. Save the pack as a folder or zip, or add it to the game, which replaces the songs in Retro Rewind's strm folder and saves the originals so Remove from game can put them back
 - Even volume across songs, louder on race tracks because the game's race mix turns music down, with clean per-song boost or cut
 - The exported folder has install steps and credits inside, for real Wii, Dolphin or sharing
 

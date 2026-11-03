@@ -67,6 +67,14 @@ public sealed class TrackRow
     /// <summary>How much faster the final lap file plays. 1.06 matches how the game speeds up its own music.</summary>
     public double FinalSpeed { get; set; } = PackBuilder.GameFinalSpeed;
 
+    /// <summary>Volume for the song picked for the final lap, in dB. Null means the same as the main song.</summary>
+    public int? FinalVolumeDb { get; set; }
+
+    /// <summary>Speed for the song picked for the final lap. Zero means the same as the main song.</summary>
+    public double FinalSongSpeed { get; set; }
+    public bool FinalSongKeepPitch { get; set; }
+    public bool FinalSongReverb { get; set; }
+
     public bool IsAssigned => !string.IsNullOrWhiteSpace(Source);
 
     /// <summary>Plays during a race or battle, where the game mixes music far below menu level.</summary>

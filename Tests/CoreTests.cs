@@ -789,6 +789,59 @@ public class BuildTests : IDisposable
         Assert.NotEqual(original, File.ReadAllBytes(Music("1_N")));
     }
 
+    private string BrstmAt(int rate)
+    {
+        string path = Path.Combine(_folder, $"at{rate}.brstm");
+        var tone = Enumerable.Range(0, rate).Select(i => (short)(8000 * Math.Sin(i * 0.05))).ToArray();
+        AudioIO.WriteBrstm(new Song { Channels = [tone, tone], Rate = rate }, path, 2, rate);
+        return path;
+    }
+
+    [Fact]
+    public void Build_ImportedSongAbove44100Hz_IsEncodedAgain_SoTheWiiCanPlayIt()
+    {
+        string source = BrstmAt(48000);
+        Assert.Equal(48000, AudioIO.ReadBrstmSummary(source).Rate);
+        var row = Imported("1_N", source);
+        Assert.Equal(0, Run(row).Failed);
+        int rate = AudioIO.ReadBrstmSummary(Music("1_N")).Rate;
+        Assert.InRange(rate, 1, PackBuilder.MaxWiiSampleRate);
+    }
+
+    [Fact]
+    public void Build_ImportedSongAbove44100Hz_ForDolphin_IsKeptAsItIs()
+    {
+        string source = BrstmAt(48000);
+        var row = Imported("1_N", source);
+        PackBuilder.Build(new Options { PackName = "T", TargetWii = false }, [row], _folder, m => { lock (_log) _log.Add(m); });
+        Assert.Equal(File.ReadAllBytes(row.Source), File.ReadAllBytes(Music("1_N")));
+        Assert.Equal(48000, AudioIO.ReadBrstmSummary(Music("1_N")).Rate);
+    }
+
+    [Fact]
+    public void Build_ImportedSongAt44100Hz_IsKeptByteForByte()
+    {
+        string source = BrstmAt(44100);
+        var row = Imported("1_N", source);
+        Assert.Equal(0, Run(row).Failed);
+        Assert.Equal(File.ReadAllBytes(row.Source), File.ReadAllBytes(Music("1_N")));
+    }
+
+    [Fact]
+    public void FinalRate_NeverGoesAboveWhatTheWiiPlays() =>
+        Assert.Equal(PackBuilder.MaxWiiSampleRate, PackBuilder.FinalRate(44100, 1.25));
+
+    [Fact]
+    public void Build_VeryLongSong_SaysItUsesALotOfMemory()
+    {
+        string path = Path.Combine(_folder, "long.wav");
+        WriteWav(path, 11 * 60);
+        var row = Row("1_N");
+        row.Source = path;
+        Run(row);
+        Assert.Contains(_log, line => line.Contains("minutes long"));
+    }
+
     [Fact]
     public void Build_ImportedStockSong_KeepsItsOwnFinalLapFile()
     {
@@ -954,29 +1007,160 @@ public class BuildTests : IDisposable
         Assert.Equal(PackBuilder.GameFinalSpeed, fresh[0].FinalSpeed);
     }
 
+    private string Backups => Path.Combine(_folder, "backups");
+
     [Fact]
-    public void CopyToPatches_CopiesSongs_LeavesOtherFilesAlone()
+    public void CopyToStrm_PutsSongsInTheStrmFolder_LeavesOtherFilesAlone()
     {
         var result = Run(Row("1_N"));
         string rr = Path.Combine(_folder, "rr");
-        string other = Path.Combine(rr, "Patches", "la_bike-fk.szs");
+        string other = Path.Combine(rr, "strm", "readme.txt");
         Directory.CreateDirectory(Path.GetDirectoryName(other)!);
-        File.WriteAllText(other, "kart");
-        Assert.Equal(1, PackBuilder.CopyToPatches(result.MusicFolder, rr));
-        Assert.True(File.Exists(Path.Combine(rr, "Patches", "1_N.brstm")));
-        Assert.Equal("kart", File.ReadAllText(other));
+        File.WriteAllText(other, "mine");
+        Assert.Equal(1, PackBuilder.CopyToStrm(result.MusicFolder, rr, Backups));
+        Assert.True(File.Exists(Path.Combine(rr, "strm", "1_N.brstm")));
+        Assert.False(File.Exists(Path.Combine(rr, "Patches", "1_N.brstm")));
+        Assert.Equal("mine", File.ReadAllText(other));
     }
 
     [Fact]
-    public void PatchesConflicts_OnlyDifferentFilesCount()
+    public void CopyToStrm_SavesRetroRewindsOwnSongOnce_AndRemovingTheMakerRestoresIt()
     {
         var result = Run(Row("1_N"), Row("2_N"));
         string rr = Path.Combine(_folder, "rr");
-        Assert.Empty(PackBuilder.PatchesConflicts(result.MusicFolder, rr));
-        PackBuilder.CopyToPatches(result.MusicFolder, rr);
-        Assert.Empty(PackBuilder.PatchesConflicts(result.MusicFolder, rr));
-        File.WriteAllText(Path.Combine(rr, "Patches", "2_N.brstm"), "different");
-        Assert.Equal(["2_N.brstm"], PackBuilder.PatchesConflicts(result.MusicFolder, rr));
+        string strm = Path.Combine(rr, "strm");
+        Directory.CreateDirectory(strm);
+        File.WriteAllText(Path.Combine(strm, "1_N.brstm"), "retro rewind's own");
+
+        PackBuilder.CopyToStrm(result.MusicFolder, rr, Backups);
+        Assert.Equal("retro rewind's own", File.ReadAllText(Path.Combine(Backups, "1_N.brstm")));
+        Assert.NotEqual("retro rewind's own", File.ReadAllText(Path.Combine(strm, "1_N.brstm")));
+
+        // Adding again must not save the pack's song over the original.
+        PackBuilder.CopyToStrm(result.MusicFolder, rr, Backups);
+        Assert.Equal("retro rewind's own", File.ReadAllText(Path.Combine(Backups, "1_N.brstm")));
+
+        int removed = PackBuilder.RemovePack("T", [], rr, result.MusicFolder, Backups);
+        Assert.Equal(2, removed);
+        Assert.Equal("retro rewind's own", File.ReadAllText(Path.Combine(strm, "1_N.brstm")));
+        Assert.False(File.Exists(Path.Combine(strm, "2_N.brstm")));
+        Assert.Empty(PackBuilder.PlacedInStrm(Backups));
+    }
+
+    [Fact]
+    public void CopyToStrm_AlsoReplacesAnOldCopyInPatches_WhichWouldPlayInstead()
+    {
+        var result = Run(Row("1_N"));
+        string rr = Path.Combine(_folder, "rr");
+        Directory.CreateDirectory(Path.Combine(rr, "Patches"));
+        File.WriteAllText(Path.Combine(rr, "Patches", "1_N.brstm"), "old");
+        PackBuilder.CopyToStrm(result.MusicFolder, rr, Backups);
+        Assert.Equal(File.ReadAllBytes(Path.Combine(rr, "strm", "1_N.brstm")), File.ReadAllBytes(Path.Combine(rr, "Patches", "1_N.brstm")));
+    }
+
+    [Fact]
+    public void Build_FinalLapSong_HasItsOwnVolumeAndSpeed()
+    {
+        var row = Row("1_N");
+        row.FinalSource = _wav;
+        Run(row);
+        long normal = AudioIO.ReadBrstmSummary(Music("1_Nx")).Samples;
+        string before = Convert.ToHexString(File.ReadAllBytes(Music("1_Nx")));
+
+        row.FinalVolumeDb = 6;
+        row.FinalSongSpeed = 1.5;
+        Assert.Equal(0, Run(row).Unchanged);
+        Assert.InRange(AudioIO.ReadBrstmSummary(Music("1_Nx")).Samples, normal / 1.5 - 4000, normal / 1.5 + 4000);
+        Assert.NotEqual(before, Convert.ToHexString(File.ReadAllBytes(Music("1_Nx"))));
+
+        // The main song keeps its own speed.
+        Assert.InRange(AudioIO.ReadBrstmSummary(Music("1_N")).Samples, normal - 4000, normal + 4000);
+    }
+
+    [Fact]
+    public void Project_RemembersTheFinalLapSongsVolumeAndSpeed()
+    {
+        var row = Row("1_N");
+        row.FinalVolumeDb = -4;
+        row.FinalSongSpeed = 0.8;
+        row.FinalSongReverb = true;
+        string path = Path.Combine(_folder, "finalsong.json");
+        Project.From(new Options(), [row]).Save(path);
+        var fresh = new List<TrackRow> { new() { FileBase = "1_N" } };
+        Project.Load(path).ApplyTo(fresh);
+        Assert.Equal(-4, fresh[0].FinalVolumeDb);
+        Assert.Equal(0.8, fresh[0].FinalSongSpeed);
+        Assert.True(fresh[0].FinalSongReverb);
+    }
+
+    [Theory]
+    [InlineData(0, 1, 1)]
+    [InlineData(0, -1, -1)]
+    [InlineData(12, 1, 12)]
+    [InlineData(-12, -1, -12)]
+    [InlineData(5, -3, 2)]
+    public void StepVolume_MovesByWholeDecibels_AndStopsAtTheEnds(int start, int step, int expected) =>
+        Assert.Equal(expected, PackBuilder.StepVolume(start, step));
+
+    [Fact]
+    public void RenderFinalPreview_PlaysFasterAndHigher_ByTheFinalLapSpeed()
+    {
+        var row = Row("1_N");
+        string normal = PackBuilder.RenderFinalPreview(new Options(), row);
+        row.FinalSpeed = 1.25;
+        string fast = PackBuilder.RenderFinalPreview(new Options(), row);
+
+        // The same samples at a higher rate: the wav header carries the rate, so it plays shorter and higher.
+        static int RateOf(string path) => BitConverter.ToInt32(File.ReadAllBytes(path), 24);
+        Assert.Equal(33920, RateOf(normal));
+        Assert.Equal(40000, RateOf(fast));
+        Assert.InRange(new FileInfo(fast).Length, new FileInfo(normal).Length - 8, new FileInfo(normal).Length + 8);
+    }
+
+    [Fact]
+    public void RenderFinalPreview_UsesTheFinalLapSong_WithItsOwnSpeed()
+    {
+        var row = Row("1_N");
+        row.FinalSource = _wav;
+        string same = PackBuilder.RenderFinalPreview(new Options(), row);
+        row.FinalSongSpeed = 1.5;
+        string quick = PackBuilder.RenderFinalPreview(new Options(), row);
+        Assert.True(new FileInfo(quick).Length < new FileInfo(same).Length * 0.8);
+    }
+
+    [Fact]
+    public void RemovePack_PutsBackEverythingPlacedInStrm_EvenWithoutTheBuiltPack()
+    {
+        var result = Run(Row("1_N"));
+        string rr = Path.Combine(_folder, "rr");
+        Directory.CreateDirectory(Path.Combine(rr, "strm"));
+        File.WriteAllText(Path.Combine(rr, "strm", "1_N.brstm"), "original");
+        PackBuilder.CopyToStrm(result.MusicFolder, rr, Backups);
+        Directory.Delete(result.Folder, true);
+
+        Assert.Equal(1, PackBuilder.RemovePack("T", [], rr, null, Backups));
+        Assert.Equal("original", File.ReadAllText(Path.Combine(rr, "strm", "1_N.brstm")));
+    }
+
+    [Fact]
+    public void ApplyFade_SilentAtTheEdges_UntouchedInTheMiddle()
+    {
+        var audio = new[] { Enumerable.Repeat((short)10000, 44100 * 4).ToArray(), Enumerable.Repeat((short)10000, 44100 * 4).ToArray() };
+        EditTimeline.ApplyFade(audio, 44100, 1, 2);
+        Assert.Equal(0, audio[0][0]);
+        Assert.Equal(0, audio[1][^1]);
+        Assert.Equal(10000, audio[0][44100 + 10]);
+        Assert.InRange(audio[0][22050], 4900, 5100);
+        Assert.InRange(audio[0][^44100], 4900, 5100);
+    }
+
+    [Fact]
+    public void ApplyFade_LongerThanTheSong_StillWorks()
+    {
+        var audio = new[] { Enumerable.Repeat((short)10000, 1000).ToArray() };
+        EditTimeline.ApplyFade(audio, 44100, 8, 8);
+        Assert.Equal(0, audio[0][0]);
+        Assert.Equal(0, audio[0][^1]);
     }
 
     [Fact]

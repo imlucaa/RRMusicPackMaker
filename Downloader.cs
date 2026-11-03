@@ -30,7 +30,6 @@ public static class Downloader
     private const string FilePrefix = "FILE";
     private const int SearchCount = 8;
     private const int YouTubeCount = 15;
-    public const int PreviewSeconds = 60;
     private const string MusicSearchUrl = "https://music.youtube.com/youtubei/v1/search?prettyPrint=false";
     private const string MusicSongsFilter = "EgWKAQIIAWoMEA4QChADEAQQCRAF";
     private const string MusicVideosFilter = "EgWKAQIQAWoMEA4QChADEAQQCRAF";
@@ -64,11 +63,23 @@ public static class Downloader
         "--", $"ytsearch{YouTubeCount}:{query.Trim()}",
     ];
 
-    internal static List<string> DownloadArguments(string target, string folder, string ffmpegFolder, string? javaScript = null) =>
+    /// <summary>The top audio bitrates to offer. Zero is the best the video has.</summary>
+    public static readonly (string Text, int Kbps)[] QualityChoices =
+    [
+        ("Best", 0), ("256 kbps", 256), ("192 kbps", 192), ("128 kbps", 128), ("96 kbps", 96), ("64 kbps", 64),
+    ];
+
+    public static int QualityIndex(int kbps) => Math.Max(0, Array.FindIndex(QualityChoices, choice => choice.Kbps == kbps));
+
+    /// <summary>The best audio at or under the chosen bitrate. A video with nothing that low falls back to its best.</summary>
+    internal static string AudioFormat(int maxKbps) =>
+        maxKbps > 0 ? $"bestaudio[abr<={maxKbps}]/bestaudio/best" : "bestaudio/best";
+
+    internal static List<string> DownloadArguments(string target, string folder, string ffmpegFolder, string? javaScript = null, int maxKbps = 0) =>
     [
         .. RuntimeArguments(javaScript),
         "--ignore-config", "--encoding", "utf-8", "--no-warnings",
-        "-f", "bestaudio/best", "-x",
+        "-f", AudioFormat(maxKbps), "-x",
         // One song only: never a whole playlist, a live stream or something enormous.
         "--no-playlist", "--playlist-items", "1", "--match-filter", "!is_live", "--max-filesize", "300M",
         "--no-mtime", "--windows-filenames", "--ffmpeg-location", ffmpegFolder,
@@ -77,47 +88,6 @@ public static class Downloader
         "--print", $"after_move:{FilePrefix}\t%(filepath)s\t%(track,title)s\t%(artist,creator,uploader,channel)s",
         "--", target,
     ];
-
-    /// <summary>Asks for the address of a video's audio without downloading it, so it can be previewed.</summary>
-    internal static List<string> PreviewArguments(string target, string? javaScript = null) =>
-    [
-        .. RuntimeArguments(javaScript),
-        "--ignore-config", "--encoding", "utf-8", "--no-warnings",
-        "-f", "bestaudio/best", "--no-playlist", "--playlist-items", "1", "--get-url",
-        "--", target,
-    ];
-
-    /// <summary>Fetches the start of a song into a temporary WAV, so it can be heard before downloading.</summary>
-    public static async Task<string> PreviewAsync(string target, Action<string> status, CancellationToken cancel)
-    {
-        string tool = await EnsureToolAsync(status, cancel);
-        string ffmpeg = Tools.Find("ffmpeg");
-        status("Getting a preview...");
-        string? address = null;
-        var errors = new StringBuilder();
-        int exit = await RunAsync(tool, PreviewArguments(target, FindNode()), line =>
-        {
-            if (address == null && line.StartsWith("http", StringComparison.OrdinalIgnoreCase))
-                address = line.Trim();
-        }, line => errors.AppendLine(line), cancel);
-        if (exit != 0 || address == null)
-            throw new DownloadFailedException(FriendlyError(LastError(errors.ToString())));
-
-        string file = Path.Combine(Path.GetTempPath(), $"rrp_{Guid.NewGuid():N}.wav");
-        try
-        {
-            int converted = await RunAsync(ffmpeg, ["-v", "error", "-nostdin", "-y", "-i", address, "-t", PreviewSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                "-vn", "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le", file], _ => { }, _ => { }, cancel);
-            if (converted != 0 || !File.Exists(file))
-                throw new DownloadFailedException("Couldn't get a preview of that one. You can still download it.");
-            return file;
-        }
-        catch
-        {
-            File.Delete(file);
-            throw;
-        }
-    }
 
     private static List<string> RuntimeArguments(string? javaScript) =>
         javaScript == null ? [] : ["--js-runtimes", $"node:{javaScript}"];
@@ -491,7 +461,7 @@ public static class Downloader
     }
 
     /// <summary>Fetches one song's audio. If it fails in a way an update could fix, updates yt-dlp and tries once more.</summary>
-    public static async Task<DownloadedSong> DownloadAsync(string target, string folder, Action<string> status, Action<double> progress, CancellationToken cancel)
+    public static async Task<DownloadedSong> DownloadAsync(string target, string folder, Action<string> status, Action<double> progress, CancellationToken cancel, int maxKbps = 0)
     {
         string tool = await EnsureToolAsync(status, cancel);
         Directory.CreateDirectory(folder);
@@ -500,7 +470,7 @@ public static class Downloader
         {
             try
             {
-                return await DownloadOnceAsync(tool, target, folder, ffmpeg, status, progress, cancel);
+                return await DownloadOnceAsync(tool, target, folder, ffmpeg, status, progress, cancel, maxKbps);
             }
             catch (DownloadFailedException first) when (WorthUpdating(first.Data["raw"] as string ?? ""))
             {
@@ -508,7 +478,7 @@ public static class Downloader
                 int updated = await RunAsync(tool, ["-U"], _ => { }, _ => { }, cancel);
                 if (updated != 0)
                     throw;
-                return await DownloadOnceAsync(tool, target, folder, ffmpeg, status, progress, cancel);
+                return await DownloadOnceAsync(tool, target, folder, ffmpeg, status, progress, cancel, maxKbps);
             }
         }
         catch (Exception ex) when (ex is DownloadFailedException or OperationCanceledException)
@@ -518,12 +488,12 @@ public static class Downloader
         }
     }
 
-    private static async Task<DownloadedSong> DownloadOnceAsync(string tool, string target, string folder, string ffmpeg, Action<string> status, Action<double> progress, CancellationToken cancel)
+    private static async Task<DownloadedSong> DownloadOnceAsync(string tool, string target, string folder, string ffmpeg, Action<string> status, Action<double> progress, CancellationToken cancel, int maxKbps)
     {
         DownloadedSong? song = null;
         var errors = new StringBuilder();
         status("Downloading...");
-        int exit = await RunAsync(tool, DownloadArguments(target, folder, ffmpeg, FindNode()), line =>
+        int exit = await RunAsync(tool, DownloadArguments(target, folder, ffmpeg, FindNode(), maxKbps), line =>
         {
             if (ParseProgress(line) is { } fraction)
                 progress(fraction);
@@ -616,9 +586,7 @@ public sealed class DownloadForm : Form
     private readonly ThinProgress _progress = new() { Dock = DockStyle.Bottom };
     private readonly ModernButton _download = new() { Text = "Download", Tag = Theme.AccentTag, AutoSize = true, Height = 28, Margin = new Padding(6, 0, 0, 0), Enabled = false };
     private readonly ModernButton _cancel = new() { Text = "Cancel", AutoSize = true, Height = 28 };
-    private readonly ModernButton _preview = new() { Text = "▶  Preview", AutoSize = true, Height = 28, Margin = new Padding(0, 0, 6, 0) };
-    private readonly ModernButton _stopPreview = new() { Text = "■  Stop", AutoSize = true, Height = 28, Margin = new Padding(0, 0, 6, 0), Visible = false };
-    private string? _previewing;
+    private readonly ComboBox _quality = new FlatCombo { Width = 130, Margin = new Padding(8, 0, 0, 0) };
     private List<SearchResult> _found = [];
     private CancellationTokenSource? _work;
 
@@ -635,23 +603,30 @@ public sealed class DownloadForm : Form
         Font = Theme.UiFont();
         BuildLayout();
         Theme.Apply(this);
-        AudioPreview.Changed += ShowPreview;
-        FormClosed += (_, _) =>
-        {
-            _work?.Cancel();
-            AudioPreview.Changed -= ShowPreview;
-            AudioPreview.StopFor(this);
-        };
+        FormClosed += (_, _) => _work?.Cancel();
     }
 
     private void BuildLayout()
     {
-        var top = new TableLayoutPanel { Dock = DockStyle.Top, Height = 54, ColumnCount = 2, Padding = new Padding(14, 12, 14, 8) };
+        var top = new TableLayoutPanel { Dock = DockStyle.Top, Height = 54, ColumnCount = 3, Padding = new Padding(14, 12, 14, 8) };
         top.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        top.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         top.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         _query.Margin = new Padding(0);
         top.Controls.Add(_query, 0, 0);
-        top.Controls.Add(_go, 1, 0);
+
+        // The audio quality to download at, remembered for next time. Best is the most the video has.
+        foreach (var (text, _) in Downloader.QualityChoices)
+            _quality.Items.Add(text);
+        _quality.SelectedIndex = Downloader.QualityIndex(AppStorage.LoadSettings().DownloadKbps);
+        _quality.SelectedIndexChanged += (_, _) =>
+        {
+            var settings = AppStorage.LoadSettings();
+            settings.DownloadKbps = Downloader.QualityChoices[Math.Max(0, _quality.SelectedIndex)].Kbps;
+            AppStorage.SaveSettings(settings);
+        };
+        top.Controls.Add(_quality, 1, 0);
+        top.Controls.Add(_go, 2, 0);
 
         var holder = new Panel { Dock = DockStyle.Fill, Padding = new Padding(14, 0, 14, 4) };
         holder.Controls.Add(_results);
@@ -670,7 +645,7 @@ public sealed class DownloadForm : Form
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         var buttons = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Margin = new Padding(0) };
-        buttons.Controls.AddRange([_download, _cancel, _stopPreview, _preview]);
+        buttons.Controls.AddRange([_download, _cancel]);
         footer.Controls.Add(_status, 0, 0);
         footer.Controls.Add(buttons, 1, 0);
 
@@ -691,14 +666,8 @@ public sealed class DownloadForm : Form
         };
         _go.Click += async (_, _) => await GoAsync();
         _download.Click += async (_, _) => await DownloadSelectedAsync();
-        _preview.Click += async (_, _) => await PreviewSelectedAsync();
-        _stopPreview.Click += (_, _) => AudioPreview.StopFor(this);
         _results.DoubleClick += async (_, _) => await DownloadSelectedAsync();
-        _results.SelectedIndexChanged += (_, _) =>
-        {
-            UpdateDownloadButton();
-            ShowPreview();
-        };
+        _results.SelectedIndexChanged += (_, _) => UpdateDownloadButton();
         _cancel.Click += (_, _) =>
         {
             if (_work != null)
@@ -712,61 +681,6 @@ public sealed class DownloadForm : Form
     private void UpdateDownloadButton()
     {
         _download.Enabled = _work == null && _results.SelectedIndex >= 0;
-        _preview.Enabled = _work == null && _results.SelectedIndex >= 0;
-    }
-
-    private SearchResult? Picked => _results.SelectedIndex >= 0 && _results.SelectedIndex < _found.Count ? _found[_results.SelectedIndex] : null;
-
-    /// <summary>The button pauses the song it's playing. On any other result it previews that one instead.</summary>
-    private void ShowPreview()
-    {
-        if (IsDisposed)
-            return;
-        bool active = AudioPreview.IsActive(this);
-        _stopPreview.Visible = active;
-        bool thisOne = active && Picked?.Link == _previewing;
-        _preview.Text = !thisOne ? "▶  Preview" : AudioPreview.State == PreviewState.Paused ? "▶  Resume" : "❚❚  Pause";
-    }
-
-    /// <summary>Plays the start of the picked result. It's only heard here, and nothing is saved.</summary>
-    internal async Task PreviewSelectedAsync()
-    {
-        if (Picked is not { } pick)
-            return;
-        if (AudioPreview.IsActive(this) && pick.Link == _previewing)
-        {
-            AudioPreview.TogglePause();
-            return;
-        }
-        if (_work != null)
-            return;
-        AudioPreview.StopFor(this);
-        using var work = Begin();
-        try
-        {
-            string file = await Downloader.PreviewAsync(pick.Link, Report, work.Token);
-            if (IsDisposed)
-            {
-                File.Delete(file);
-                return;
-            }
-            if (!AudioPreview.Play(file, this))
-            {
-                _status.Text = "Could not play the sound. Check your audio device.";
-                return;
-            }
-            _previewing = pick.Link;
-            ShowPreview();
-            _status.Text = $"Playing the first {Downloader.PreviewSeconds} seconds. Nothing is downloaded yet.";
-        }
-        catch (Exception ex) when (ex is DownloadFailedException or HttpRequestException or OperationCanceledException or IOException or UnauthorizedAccessException or InvalidDataException or FileNotFoundException)
-        {
-            ShowFailure(ex);
-        }
-        finally
-        {
-            End();
-        }
     }
 
     private void UpdateGoButton()
@@ -818,7 +732,7 @@ public sealed class DownloadForm : Form
             foreach (var result in _found)
                 _results.Items.Add(new SideList.Item(result.Display, -1));
             _status.Text = _found.Count == 0 ? "No results. Try other words."
-                : $"{_found.Count} results. Preview one, then click Download.";
+                : $"{_found.Count} results. Pick one, then click Download.";
             if (_found.Count > 0)
                 _results.SelectedIndex = 0;
         }
@@ -843,13 +757,12 @@ public sealed class DownloadForm : Form
 
     private async Task DownloadAsync(string target, SearchResult? pick = null)
     {
-        AudioPreview.StopFor(this);
         using var work = Begin();
         _progress.Fraction = 0;
         try
         {
             var song = await Downloader.DownloadAsync(target, _folder, Report,
-                fraction => OnWindow(() => _progress.Fraction = fraction), work.Token);
+                fraction => OnWindow(() => _progress.Fraction = fraction), work.Token, Downloader.QualityChoices[Math.Max(0, _quality.SelectedIndex)].Kbps);
             if (IsDisposed)
                 return;
             // The search result has the cleanest title and artist, so it wins for official songs.
@@ -916,6 +829,8 @@ public sealed class DownloadForm : Form
     internal string GoTextForTest => _go.Text;
     internal int ResultCountForTest => _results.Items.Count;
     internal void SelectResultForTest(int index) => _results.SelectedIndex = index;
-    internal string PreviewTextForTest => _preview.Text;
-    internal bool StopPreviewVisibleForTest => _stopPreview.Visible;
+    internal ComboBox QualityForTest => _quality;
+    internal bool HasPreviewForTest => Controls.Cast<Control>().SelectMany(AllControls).OfType<ModernButton>().Any(button => button.Text.Contains("Preview"));
+
+    private static IEnumerable<Control> AllControls(Control control) => new[] { control }.Concat(control.Controls.Cast<Control>().SelectMany(AllControls));
 }

@@ -23,6 +23,24 @@ public static class EditTimeline
 
     public static long Length(IReadOnlyList<EditClip> clips) => clips.Sum(clip => clip.Length);
 
+    /// <summary>Fades the song in from silence and out to silence, in seconds. A fade is never longer than the song. The audio is changed in place.</summary>
+    public static short[][] ApplyFade(short[][] audio, int rate, double fadeInSeconds, double fadeOutSeconds)
+    {
+        if (audio.Length == 0 || audio[0].Length == 0 || (fadeInSeconds <= 0 && fadeOutSeconds <= 0))
+            return audio;
+        int length = audio[0].Length;
+        int fadeIn = Math.Min((int)(fadeInSeconds * rate), length);
+        int fadeOut = Math.Min((int)(fadeOutSeconds * rate), length);
+        foreach (var channel in audio)
+        {
+            for (int i = 0; i < fadeIn; i++)
+                channel[i] = (short)(channel[i] * ((double)i / fadeIn));
+            for (int i = 0; i < fadeOut; i++)
+                channel[length - 1 - i] = (short)(channel[length - 1 - i] * ((double)i / fadeOut));
+        }
+        return audio;
+    }
+
     /// <summary>The part playing at a position, or -1 when there are no parts.</summary>
     public static int ClipAt(IReadOnlyList<EditClip> clips, long position)
     {
@@ -183,6 +201,10 @@ public sealed class EditorState
 
     /// <summary>Which of the speed choices the saved song gets.</summary>
     public int Speed { get; set; }
+
+    /// <summary>Which of the fade choices the start and end of the saved song get.</summary>
+    public int FadeIn { get; set; }
+    public int FadeOut { get; set; }
 
     private static string PathOnDisk => Path.Combine(AppStorage.Folder, "editor.json");
 
