@@ -18,7 +18,8 @@ Windows 10 or 11. You don't need Retro Rewind, Wheel Wizard or a game file to ma
 3. Click **Edit loop** if you want to change where the song loops.
 4. Click **Export pack**. Save it as a zip, put the songs in a folder, or add them straight to your game.
 
-On a real Wii, copy the songs into `SD:/RetroRewind6/strm`, and say yes if it asks to replace files.
+- **Real Wii:** copy the songs into `SD:/RetroRewind6/strm`, and say yes if it asks to replace files.
+- **Dolphin:** copy the songs into `Dolphin Emulator\Load\Riivolution\WheelWizard\RetroRewind6\strm`, and say yes to replace files. In Dolphin, File > Open User Folder opens the `Dolphin Emulator` folder.
 
 ## What it can do
 
