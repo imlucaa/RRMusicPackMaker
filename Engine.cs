@@ -8,7 +8,7 @@ namespace RRMusicPackMaker;
 /// as the classic window, and answers on standard output: one JSON document, or for long work, one line per event
 /// ("log", "progress", then "done" or "error"), each a JSON object.
 /// </summary>
-internal static class Engine
+internal static partial class Engine
 {
     private static readonly JsonSerializerOptions Json = new()
     {
@@ -59,6 +59,34 @@ internal static class Engine
                 return Remove();
             case "preview":
                 return Preview(args);
+            case "songs-full":
+                return SongsWithLengths();
+            case "songs-delete":
+                return DeleteSongs(args);
+            case "installed":
+                return InstalledPacks();
+            case "installed-delete":
+                return DeleteInstalledPack(args);
+            case "import":
+                return Import(args);
+            case "match":
+                return Match(args);
+            case "search":
+                return Search(args);
+            case "download":
+                return Download(args);
+            case "waveform":
+                return Waveform(args);
+            case "loop-seam":
+                return LoopSeam(args);
+            case "render-edit":
+                return RenderEdit(args);
+            case "length":
+                return Length(args);
+            case "check":
+                return Check();
+            case "get-ffmpeg":
+                return GetFfmpeg();
             default:
                 Console.Error.WriteLine("Usage: engine catalog | songs | export --mode zip|folder|game [--target PATH] [--wii|--dolphin] | remove");
                 return 2;
@@ -177,6 +205,20 @@ internal static class Engine
                     }
                     PackBuilder.CopyToStrm(result.MusicFolder, rrRoot, PackBuilder.StrmBackupFolder(output));
                     where = PackBuilder.StrmFolder(rrRoot);
+                    if (settings.BoostMusicSlots)
+                    {
+                        try
+                        {
+                            string archive = SoundArchive.Prepare(settings, message => Emit(new { @event = "log", message }));
+                            SoundArchive.Place(archive, true, Path.Combine(rrRoot, "Patches"));
+                            Emit(new { @event = "log", message = "Music slots raised to full volume with your own copy of revo_kart.brsar." });
+                        }
+                        catch (Exception ex) when (ex is DownloadFailedException or InvalidDataException or IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+                        {
+                            // The pack still works without it, only quieter.
+                            Emit(new { @event = "log", message = $"Couldn't raise the music volume. {ex.Message}" });
+                        }
+                    }
                     break;
             }
             string failed = result.Failed > 0 ? $", {result.Failed} failed" : "";

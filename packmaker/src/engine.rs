@@ -23,6 +23,31 @@ pub struct Event {
     pub path: Option<String>,
     #[serde(default, rename = "where")]
     pub location: Option<String>,
+    /// Anything else the command sent back, like search results or the songs a delete removed.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+/// Runs a long command with a JSON spec file, then removes the file.
+pub fn run_with_spec(args: &[&str], spec: &serde_json::Value, on_event: impl FnMut(&Event)) -> Result<Event> {
+    let path = crate::model::write_spec(spec)?;
+    let path_text = path.to_string_lossy().into_owned();
+    let mut all: Vec<&str> = args.to_vec();
+    all.extend(["--spec", path_text.as_str()]);
+    let result = run_events(&all, on_event);
+    let _ = std::fs::remove_file(&path);
+    result
+}
+
+/// The same for commands that answer with one JSON document.
+pub fn json_with_spec<T: DeserializeOwned>(args: &[&str], spec: &serde_json::Value) -> Result<T> {
+    let path = crate::model::write_spec(spec)?;
+    let path_text = path.to_string_lossy().into_owned();
+    let mut all: Vec<&str> = args.to_vec();
+    all.extend(["--spec", path_text.as_str()]);
+    let result = run_json(&all);
+    let _ = std::fs::remove_file(&path);
+    result
 }
 
 const ENGINE_EXE: &str = "MusicPackMaker.exe";

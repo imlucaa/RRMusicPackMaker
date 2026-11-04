@@ -1,10 +1,16 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod download_view;
+mod editor_view;
 mod engine;
+mod loop_view;
 mod model;
+mod packs_view;
 mod player;
+mod settings_view;
 mod theme;
+mod ui;
 
 use gpui_kit::*;
 
@@ -13,7 +19,7 @@ fn main() {
         .with_assets(gpui_kit::assets::AllAssets)
         .run(|cx| {
             gpui_kit::init(cx);
-            theme::apply(cx);
+            theme::apply(&model::Settings::load(), cx);
             app::bind_keys(cx);
 
             let bounds = Bounds::centered(None, size(px(1320.), px(820.)), cx);

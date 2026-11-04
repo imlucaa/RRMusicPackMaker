@@ -1,7 +1,8 @@
-//! What the app works on: the track list from the engine, the saved pack, and the song library.
+//! What the app works on: the track list from the engine, the saved pack, the packs set aside, the settings and
+//! the song library.
 //!
-//! The pack and the library are the same files the classic window uses, so both apps open the same work. Unknown
-//! fields are kept as they are, so saving here never drops something only the classic window knows about.
+//! These are the same files the classic window uses, so both apps open the same work. Unknown fields are kept as
+//! they are, so saving here never drops something only the classic window knows about.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -59,6 +60,23 @@ pub struct Song {
     pub path: String,
     pub label: String,
     pub kind: String,
+    #[serde(default)]
+    pub seconds: f64,
+    #[serde(default)]
+    pub owned: bool,
+}
+
+/// A pack found on this PC: imported, made here, or a Wheel Wizard mod.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstalledPack {
+    pub name: String,
+    pub folder: String,
+    pub songs: u32,
+    #[serde(default)]
+    pub made_by_app: bool,
+    #[serde(default)]
+    pub is_mod: bool,
 }
 
 /// Where the app keeps its files: the same folder as the classic window.
@@ -98,29 +116,33 @@ pub struct SpeedChoice {
     pub reverb: bool,
 }
 
+const fn speed(text: &'static str, speed: f64, keep_pitch: bool, reverb: bool) -> SpeedChoice {
+    SpeedChoice { text, speed, keep_pitch, reverb }
+}
+
 pub const SPEEDS: &[SpeedChoice] = &[
-    SpeedChoice { text: "Normal", speed: 1.0, keep_pitch: false, reverb: false },
-    SpeedChoice { text: "Normal + reverb", speed: 1.0, keep_pitch: false, reverb: true },
-    SpeedChoice { text: "Slowed 0.9x + reverb", speed: 0.9, keep_pitch: false, reverb: true },
-    SpeedChoice { text: "Slowed 0.85x + reverb", speed: 0.85, keep_pitch: false, reverb: true },
-    SpeedChoice { text: "Slowed 0.8x + reverb", speed: 0.8, keep_pitch: false, reverb: true },
-    SpeedChoice { text: "Slowed 0.75x + reverb", speed: 0.75, keep_pitch: false, reverb: true },
-    SpeedChoice { text: "Slowed 0.7x + reverb", speed: 0.7, keep_pitch: false, reverb: true },
-    SpeedChoice { text: "Slowed 0.9x", speed: 0.9, keep_pitch: false, reverb: false },
-    SpeedChoice { text: "Slowed 0.85x", speed: 0.85, keep_pitch: false, reverb: false },
-    SpeedChoice { text: "Slowed 0.8x", speed: 0.8, keep_pitch: false, reverb: false },
-    SpeedChoice { text: "Slowed 0.75x", speed: 0.75, keep_pitch: false, reverb: false },
-    SpeedChoice { text: "Slowed 0.7x", speed: 0.7, keep_pitch: false, reverb: false },
-    SpeedChoice { text: "Faster 1.1x, same pitch", speed: 1.1, keep_pitch: true, reverb: false },
-    SpeedChoice { text: "Faster 1.2x, same pitch", speed: 1.2, keep_pitch: true, reverb: false },
-    SpeedChoice { text: "Faster 1.25x, same pitch", speed: 1.25, keep_pitch: true, reverb: false },
-    SpeedChoice { text: "Faster 1.3x, same pitch", speed: 1.3, keep_pitch: true, reverb: false },
-    SpeedChoice { text: "Faster 1.5x, same pitch", speed: 1.5, keep_pitch: true, reverb: false },
-    SpeedChoice { text: "Nightcore 1.1x", speed: 1.1, keep_pitch: false, reverb: false },
-    SpeedChoice { text: "Nightcore 1.2x", speed: 1.2, keep_pitch: false, reverb: false },
-    SpeedChoice { text: "Nightcore 1.25x", speed: 1.25, keep_pitch: false, reverb: false },
-    SpeedChoice { text: "Nightcore 1.3x", speed: 1.3, keep_pitch: false, reverb: false },
-    SpeedChoice { text: "Nightcore 1.5x", speed: 1.5, keep_pitch: false, reverb: false },
+    speed("Normal", 1.0, false, false),
+    speed("Normal + reverb", 1.0, false, true),
+    speed("Slowed 0.9x + reverb", 0.9, false, true),
+    speed("Slowed 0.85x + reverb", 0.85, false, true),
+    speed("Slowed 0.8x + reverb", 0.8, false, true),
+    speed("Slowed 0.75x + reverb", 0.75, false, true),
+    speed("Slowed 0.7x + reverb", 0.7, false, true),
+    speed("Slowed 0.9x", 0.9, false, false),
+    speed("Slowed 0.85x", 0.85, false, false),
+    speed("Slowed 0.8x", 0.8, false, false),
+    speed("Slowed 0.75x", 0.75, false, false),
+    speed("Slowed 0.7x", 0.7, false, false),
+    speed("Faster 1.1x, same pitch", 1.1, true, false),
+    speed("Faster 1.2x, same pitch", 1.2, true, false),
+    speed("Faster 1.25x, same pitch", 1.25, true, false),
+    speed("Faster 1.3x, same pitch", 1.3, true, false),
+    speed("Faster 1.5x, same pitch", 1.5, true, false),
+    speed("Nightcore 1.1x", 1.1, false, false),
+    speed("Nightcore 1.2x", 1.2, false, false),
+    speed("Nightcore 1.25x", 1.25, false, false),
+    speed("Nightcore 1.3x", 1.3, false, false),
+    speed("Nightcore 1.5x", 1.5, false, false),
 ];
 
 /// The game plays final laps 6% faster.
@@ -143,6 +165,15 @@ pub const LOOPS: &[(&str, &str)] = &[
     ("NoLoop", "No loop"),
 ];
 
+pub const CROSSFADES: &[(&str, f64)] = &[("Off", 0.0), ("0.25 s", 0.25), ("0.5 s", 0.5), ("1 s", 1.0), ("2 s", 2.0)];
+pub const SAMPLE_RATES: &[i64] = &[32000, 24000, 22050, 16000];
+pub const LOUDNESS: &[&str] = &["Even loudness", "Peak only", "Off"];
+pub const QUALITIES: &[(&str, i64)] =
+    &[("Best", 0), ("256 kbps", 256), ("192 kbps", 192), ("128 kbps", 128), ("96 kbps", 96), ("64 kbps", 64)];
+pub const FADES: &[(&str, f64)] =
+    &[("None", 0.0), ("0.5 s", 0.5), ("1 s", 1.0), ("2 s", 2.0), ("3 s", 3.0), ("5 s", 5.0), ("8 s", 8.0)];
+pub const NEW_PACK: &str = "My Music Pack";
+
 pub const MIN_VOLUME: i64 = -12;
 pub const MAX_VOLUME: i64 = 12;
 
@@ -156,19 +187,51 @@ pub struct Project {
 impl Project {
     pub fn load() -> Self {
         let path = data_folder().join("autosave.rrmusic.json");
-        let value = read_json(&path).ok().filter(Value::is_object).unwrap_or_else(|| {
-            json!({ "Options": { "PackName": "My Music Pack", "Author": "" }, "Rows": [] })
-        });
-        let mut project = Self { path, value, index: HashMap::new() };
-        if !project.value["Rows"].is_array() {
-            project.value["Rows"] = json!([]);
-        }
-        project.reindex();
+        let value = read_json(&path)
+            .ok()
+            .filter(Value::is_object)
+            .unwrap_or_else(|| json!({ "Options": { "PackName": NEW_PACK, "Author": "" }, "Rows": [] }));
+        let mut project = Self { path, value: Value::Null, index: HashMap::new() };
+        project.replace(value);
         project
     }
 
     pub fn save(&self) -> Result<()> {
         write_json(&self.path, &self.value)
+    }
+
+    /// Replaces the open pack with another one, kept in memory until saved.
+    pub fn replace(&mut self, value: Value) {
+        self.value = value;
+        if !self.value["Rows"].is_array() {
+            self.value["Rows"] = json!([]);
+        }
+        if !self.value["Options"].is_object() {
+            self.value["Options"] = json!({});
+        }
+        self.reindex();
+    }
+
+    /// A fresh pack with the same pack settings, like the classic window's New pack.
+    pub fn fresh(&self, name: &str) -> Value {
+        let mut options = self.value["Options"].clone();
+        if let Some(map) = options.as_object_mut() {
+            map.insert("PackName".into(), json!(name));
+        }
+        json!({ "Options": options, "Rows": [] })
+    }
+
+    pub fn value(&self) -> &Value {
+        &self.value
+    }
+
+    /// True when anything is set on any track, so the pack is worth keeping when another opens.
+    pub fn has_content(&self) -> bool {
+        self.value["Rows"].as_array().is_some_and(|rows| {
+            rows.iter().any(|row| {
+                ["Source", "Song", "Credits"].iter().any(|f| row[*f].as_str().is_some_and(|v| !v.is_empty()))
+            })
+        })
     }
 
     fn reindex(&mut self) {
@@ -184,22 +247,36 @@ impl Project {
     }
 
     pub fn pack_name(&self) -> String {
-        self.value["Options"]["PackName"].as_str().unwrap_or("My Music Pack").to_string()
+        self.option_text("PackName", NEW_PACK)
     }
 
     pub fn set_pack_name(&mut self, name: &str) {
-        if let Some(options) = self.value["Options"].as_object_mut() {
-            options.insert("PackName".into(), json!(name));
-        }
+        self.set_option("PackName", json!(name));
     }
 
     pub fn for_wii(&self) -> bool {
-        self.value["Options"]["TargetWii"].as_bool().unwrap_or(true)
+        self.option_flag("TargetWii", true)
     }
 
     pub fn set_for_wii(&mut self, wii: bool) {
+        self.set_option("TargetWii", json!(wii));
+    }
+
+    pub fn option_text(&self, key: &str, fallback: &str) -> String {
+        self.value["Options"][key].as_str().unwrap_or(fallback).to_string()
+    }
+
+    pub fn option_number(&self, key: &str, fallback: i64) -> i64 {
+        self.value["Options"][key].as_i64().unwrap_or(fallback)
+    }
+
+    pub fn option_flag(&self, key: &str, fallback: bool) -> bool {
+        self.value["Options"][key].as_bool().unwrap_or(fallback)
+    }
+
+    pub fn set_option(&mut self, key: &str, value: Value) {
         if let Some(options) = self.value["Options"].as_object_mut() {
-            options.insert("TargetWii".into(), json!(wii));
+            options.insert(key.into(), value);
         }
     }
 
@@ -261,6 +338,14 @@ impl Project {
             .unwrap_or_default()
     }
 
+    pub fn credits(&self, file: &str) -> String {
+        self.text(file, "Credits").to_string()
+    }
+
+    pub fn set_text(&mut self, file: &str, field: &str, value: &str) {
+        self.row_mut(file).insert(field.into(), json!(value));
+    }
+
     pub fn volume(&self, file: &str) -> i64 {
         self.number(file, "VolumeDb", 0.0) as i64
     }
@@ -285,12 +370,50 @@ impl Project {
         FINAL_SPEEDS.iter().position(|(_, s)| (s - speed).abs() < 1e-6).unwrap_or(0)
     }
 
+    pub fn crossfade_index(&self, file: &str) -> usize {
+        let seconds = self.number(file, "Crossfade", 0.0);
+        CROSSFADES.iter().position(|(_, s)| (s - seconds).abs() < 1e-6).unwrap_or(0)
+    }
+
+    pub fn final_source(&self, file: &str) -> &str {
+        self.text(file, "FinalSource")
+    }
+
+    /// The final lap song's own volume, or None when it follows the main song.
+    pub fn final_volume(&self, file: &str) -> Option<i64> {
+        self.row(file).and_then(|row| row.get("FinalVolumeDb")).and_then(Value::as_i64)
+    }
+
+    /// The final lap song's own speed choice, or None when it follows the main song.
+    pub fn final_song_speed(&self, file: &str) -> Option<usize> {
+        let speed = self.number(file, "FinalSongSpeed", 0.0);
+        if speed <= 0.0 {
+            return None;
+        }
+        let keep = self.flag(file, "FinalSongKeepPitch") && speed > 1.0;
+        let reverb = self.flag(file, "FinalSongReverb");
+        SPEEDS
+            .iter()
+            .position(|c| (c.speed - speed).abs() < 1e-6 && c.keep_pitch == keep && c.reverb == reverb)
+            .or(Some(0))
+    }
+
+    /// Own loop points in seconds, as the classic window writes them ("m:ss.ffffff").
+    pub fn loop_points(&self, file: &str) -> (Option<f64>, Option<f64>) {
+        (parse_time(self.text(file, "LoopStart")), parse_time(self.text(file, "LoopEnd")))
+    }
+
     pub fn assign(&mut self, file: &str, song: &Path) {
         let title = song.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
         let row = self.row_mut(file);
         row.insert("Source".into(), json!(song.to_string_lossy()));
         row.insert("Song".into(), json!(title));
         row.insert("KeepFile".into(), json!(false));
+        row.insert("LoopStart".into(), json!(""));
+        row.insert("LoopEnd".into(), json!(""));
+        if row.get("Loop").and_then(Value::as_str) == Some("Custom") {
+            row.insert("Loop".into(), json!("Auto"));
+        }
     }
 
     pub fn clear(&mut self, file: &str) {
@@ -298,9 +421,9 @@ impl Project {
             return;
         }
         let row = self.row_mut(file);
-        row.insert("Source".into(), json!(""));
-        row.insert("Song".into(), json!(""));
-        row.insert("FinalSource".into(), json!(""));
+        for field in ["Source", "Song", "FinalSource"] {
+            row.insert(field.into(), json!(""));
+        }
         row.insert("KeepFile".into(), json!(false));
     }
 
@@ -325,6 +448,155 @@ impl Project {
         let (_, speed) = FINAL_SPEEDS[choice.min(FINAL_SPEEDS.len() - 1)];
         self.row_mut(file).insert("FinalSpeed".into(), json!(speed));
     }
+
+    pub fn set_crossfade(&mut self, file: &str, choice: usize) {
+        let (_, seconds) = CROSSFADES[choice.min(CROSSFADES.len() - 1)];
+        self.row_mut(file).insert("Crossfade".into(), json!(seconds));
+    }
+
+    pub fn set_final_source(&mut self, file: &str, song: Option<&Path>) {
+        let value = song.map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
+        self.row_mut(file).insert("FinalSource".into(), json!(value));
+    }
+
+    pub fn set_final_volume(&mut self, file: &str, decibels: Option<i64>) {
+        let value = decibels.map(|d| json!(d.clamp(MIN_VOLUME, MAX_VOLUME))).unwrap_or(Value::Null);
+        self.row_mut(file).insert("FinalVolumeDb".into(), value);
+    }
+
+    pub fn set_final_song_speed(&mut self, file: &str, choice: Option<usize>) {
+        let (speed, keep, reverb) = match choice {
+            None => (0.0, false, false),
+            Some(choice) => {
+                let c = &SPEEDS[choice.min(SPEEDS.len() - 1)];
+                (c.speed, c.keep_pitch, c.reverb)
+            }
+        };
+        let row = self.row_mut(file);
+        row.insert("FinalSongSpeed".into(), json!(speed));
+        row.insert("FinalSongKeepPitch".into(), json!(keep));
+        row.insert("FinalSongReverb".into(), json!(reverb));
+    }
+
+    pub fn set_loop_points(&mut self, file: &str, start: f64, end: f64) {
+        let row = self.row_mut(file);
+        row.insert("Loop".into(), json!("Custom"));
+        row.insert("LoopStart".into(), json!(precise_time(start)));
+        row.insert("LoopEnd".into(), json!(precise_time(end)));
+    }
+}
+
+/// Packs set aside: `packs.json`, the same list the classic window's pack dropdown uses.
+pub struct Packs {
+    path: PathBuf,
+    map: Map<String, Value>,
+}
+
+impl Packs {
+    pub fn load() -> Self {
+        let path = data_folder().join("packs.json");
+        let map = read_json(&path).ok().and_then(|v| v.as_object().cloned()).unwrap_or_default();
+        Self { path, map }
+    }
+
+    pub fn names(&self) -> Vec<String> {
+        let mut names: Vec<String> = self.map.keys().cloned().collect();
+        names.sort_by(|a, b| natural_cmp(a, b));
+        names
+    }
+
+    pub fn contains(&self, name: &str) -> bool {
+        self.map.keys().any(|key| key.eq_ignore_ascii_case(name))
+    }
+
+    pub fn take(&mut self, name: &str) -> Option<Value> {
+        let key = self.map.keys().find(|key| key.eq_ignore_ascii_case(name))?.clone();
+        self.map.remove(&key)
+    }
+
+    /// Puts a pack aside under a name no other pack has, so nothing is ever written over.
+    pub fn put(&mut self, wanted: &str, mut project: Value, avoid: &str) -> String {
+        let mut name = wanted.to_string();
+        let mut number = 2;
+        while self.contains(&name) || name.eq_ignore_ascii_case(avoid) {
+            name = format!("{wanted} {number}");
+            number += 1;
+        }
+        if let Some(options) = project["Options"].as_object_mut() {
+            options.insert("PackName".into(), json!(name));
+        }
+        self.map.insert(name.clone(), project);
+        name
+    }
+
+    /// A name for a new pack that no pack has yet.
+    pub fn unique(&self, wanted: &str, open: &str) -> String {
+        let mut name = wanted.to_string();
+        let mut number = 2;
+        while self.contains(&name) || name.eq_ignore_ascii_case(open) {
+            name = format!("{wanted} {number}");
+            number += 1;
+        }
+        name
+    }
+
+    pub fn save(&self) -> Result<()> {
+        write_json(&self.path, &Value::Object(self.map.clone()))
+    }
+}
+
+/// The app's settings: `settings.json`, shared with the classic window. Unknown fields are kept.
+pub struct Settings {
+    path: PathBuf,
+    value: Value,
+}
+
+impl Settings {
+    pub fn load() -> Self {
+        let path = data_folder().join("settings.json");
+        let value = read_json(&path).ok().filter(Value::is_object).unwrap_or_else(|| json!({}));
+        Self { path, value }
+    }
+
+    pub fn save(&self) -> Result<()> {
+        write_json(&self.path, &self.value)
+    }
+
+    pub fn text(&self, key: &str) -> String {
+        self.value[key].as_str().unwrap_or("").to_string()
+    }
+
+    pub fn number(&self, key: &str, fallback: i64) -> i64 {
+        self.value[key].as_i64().unwrap_or(fallback)
+    }
+
+    pub fn flag(&self, key: &str, fallback: bool) -> bool {
+        self.value[key].as_bool().unwrap_or(fallback)
+    }
+
+    pub fn set(&mut self, key: &str, value: Value) {
+        if let Some(map) = self.value.as_object_mut() {
+            map.insert(key.into(), value);
+        }
+    }
+}
+
+/// Reads "m:ss.fff", "ss.fff" or "12.5s" as seconds.
+pub fn parse_time(text: &str) -> Option<f64> {
+    let text = text.trim().trim_end_matches('s');
+    if text.is_empty() {
+        return None;
+    }
+    match text.split_once(':') {
+        Some((minutes, seconds)) => Some(minutes.trim().parse::<f64>().ok()? * 60.0 + seconds.trim().parse::<f64>().ok()?),
+        None => text.parse().ok(),
+    }
+}
+
+/// Writes seconds the way the classic window does, exact enough to keep a loop on the right sample.
+pub fn precise_time(seconds: f64) -> String {
+    let minutes = (seconds / 60.0).floor();
+    format!("{}:{:09.6}", minutes as i64, seconds - minutes * 60.0)
 }
 
 /// Puts songs at the top of the library list the classic window shows, keeping its saved edits.
@@ -342,6 +614,17 @@ pub fn add_to_library(paths: &[PathBuf]) -> Result<()> {
         }
     }
     write_json(&path, &value)
+}
+
+/// Writes a small JSON file for an engine command, so long lists of paths stay off the command line.
+pub fn write_spec(value: &Value) -> Result<PathBuf> {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or_default();
+    let path = std::env::temp_dir().join(format!("packmaker-spec-{}-{stamp}.json", std::process::id()));
+    std::fs::write(&path, serde_json::to_string(value)?)?;
+    Ok(path)
 }
 
 const AUDIO: &[&str] = &["wav", "mp3", "flac", "ogg", "m4a", "aac", "opus", "wma", "brstm", "webm", "mp4"];
@@ -421,9 +704,29 @@ mod tests {
     }
 
     #[test]
-    fn speed_choices_round_trip() {
+    fn times_read_back_as_written() {
+        assert_eq!(parse_time("1:05.500000"), Some(65.5));
+        assert_eq!(parse_time("12.5s"), Some(12.5));
+        assert_eq!(parse_time(""), None);
+        assert_eq!(precise_time(65.5), "1:05.500000");
+        assert!((parse_time(&precise_time(123.456789)).unwrap() - 123.456789).abs() < 1e-6);
+    }
+
+    #[test]
+    fn packs_never_share_a_name() {
+        let mut packs = Packs { path: std::env::temp_dir().join("unused.json"), map: Map::new() };
+        assert_eq!(packs.put("Mine", json!({"Options": {}}), "Other"), "Mine");
+        assert_eq!(packs.put("Mine", json!({"Options": {}}), "Other"), "Mine 2");
+        assert_eq!(packs.put("Open", json!({"Options": {}}), "Open"), "Open 2");
+        assert!(packs.take("mine").is_some());
+        assert_eq!(packs.names(), vec!["Mine 2".to_string(), "Open 2".to_string()]);
+        assert_eq!(packs.unique("Mine 2", "x"), "Mine 2 2");
+    }
+
+    #[test]
+    fn every_track_setting_round_trips() {
         let dir = std::env::temp_dir().join(format!("pm-test-{}", std::process::id()));
-        // SAFETY: tests in this module run single-threaded for this variable.
+        // SAFETY: the only test that sets this variable.
         unsafe { std::env::set_var("RRMUSIC_DATA", &dir) };
         let mut project = Project::load();
         project.assign("6_N", Path::new("C:/music/Song A.mp3"));
@@ -431,14 +734,30 @@ mod tests {
         project.set_volume("6_N", 40);
         project.set_loop("6_N", 4);
         project.set_final_speed("6_N", 5);
+        project.set_crossfade("6_N", 3);
+        project.set_final_source("6_N", Some(Path::new("C:/music/Fast.mp3")));
+        project.set_final_volume("6_N", Some(-3));
+        project.set_final_song_speed("6_N", Some(2));
+        project.set_text("6_N", "Credits", "Someone");
         project.save().unwrap();
-        let again = Project::load();
+        let mut again = Project::load();
         assert!(again.is_assigned("6_N"));
+        assert!(again.has_content());
         assert_eq!(again.song_title("6_N"), "Song A");
         assert_eq!(again.speed_index("6_N"), 14);
         assert_eq!(again.volume("6_N"), MAX_VOLUME);
         assert_eq!(again.loop_index("6_N"), 4);
         assert_eq!(again.final_speed_index("6_N"), 5);
+        assert_eq!(again.crossfade_index("6_N"), 3);
+        assert_eq!(again.final_source("6_N"), "C:/music/Fast.mp3");
+        assert_eq!(again.final_volume("6_N"), Some(-3));
+        assert_eq!(again.final_song_speed("6_N"), Some(2));
+        assert_eq!(again.credits("6_N"), "Someone");
+        again.set_loop_points("6_N", 1.5, 61.25);
+        assert_eq!(again.loop_points("6_N"), (Some(1.5), Some(61.25)));
+        assert_eq!(again.loop_index("6_N"), 3);
+        again.set_final_song_speed("6_N", None);
+        assert_eq!(again.final_song_speed("6_N"), None);
         let _ = std::fs::remove_dir_all(dir);
     }
 }
