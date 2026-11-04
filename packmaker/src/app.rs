@@ -2169,8 +2169,7 @@ impl PackMaker {
             if self.project.is_assigned(&first) {
                 panel = panel
                     .child(ui::field("Name", Input::new(&self.title_input).small(), cx))
-                    .child(ui::field("Credits", Input::new(&self.credits_input).small(), cx))
-                    .child(ui::long_field("From", self.project.source(&first).to_string(), cx));
+                    .child(ui::field("Credits", Input::new(&self.credits_input).small(), cx));
             } else {
                 panel = panel.child(div().text_color(cx.theme().muted_foreground).child("No song yet. The game's own music plays."));
             }
@@ -2216,7 +2215,11 @@ impl PackMaker {
                 panel = panel
                     .child(ui::long_field(
                         "Own song",
-                        if final_source.is_empty() { "None, the main song plays faster".to_string() } else { final_source.clone() },
+                        if final_source.is_empty() {
+                            "None, the main song plays faster".to_string()
+                        } else {
+                            Path::new(&final_source).file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+                        },
                         cx,
                     ))
                     .when(!final_source.is_empty(), |el| {
