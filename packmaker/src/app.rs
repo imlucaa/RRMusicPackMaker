@@ -213,8 +213,10 @@ impl PackMaker {
                 InputEvent::Blur | InputEvent::PressEnter { .. } => this.keep_name_unique(cx),
                 _ => {}
             }),
-            cx.subscribe_in(&title_input, window, |this, state, event, _, cx| {
-                if matches!(event, InputEvent::Change) && !this.syncing {
+            cx.subscribe_in(&title_input, window, |this, state, event, window, cx| {
+                // Filling the box when the selection moves also raises a change. Only typing in it counts as an edit.
+                let typing = state.read(cx).focus_handle(cx).is_focused(window);
+                if matches!(event, InputEvent::Change) && typing && !this.syncing {
                     if let Some(file) = this.synced_file.clone() {
                         let value = state.read(cx).value().to_string();
                         this.project.set_text(&file, "Song", &value);
@@ -222,8 +224,10 @@ impl PackMaker {
                     }
                 }
             }),
-            cx.subscribe_in(&credits_input, window, |this, state, event, _, cx| {
-                if matches!(event, InputEvent::Change) && !this.syncing {
+            cx.subscribe_in(&credits_input, window, |this, state, event, window, cx| {
+                // Filling the box when the selection moves also raises a change. Only typing in it counts as an edit.
+                let typing = state.read(cx).focus_handle(cx).is_focused(window);
+                if matches!(event, InputEvent::Change) && typing && !this.syncing {
                     if let Some(file) = this.synced_file.clone() {
                         let value = state.read(cx).value().to_string();
                         this.project.set_text(&file, "Credits", &value);
@@ -2160,17 +2164,13 @@ impl PackMaker {
                 .child(ui::field("Category", track.category.clone(), cx))
                 .child(ui::field("File", format!("{}.brstm", track.file), cx))
                 .when(!track.variant_of.is_empty(), |el| el.child(ui::field("Version of", track.variant_of.clone(), cx)))
-                .when(!track.note.is_empty(), |el| el.child(ui::field("Note", div().text_sm().child(track.note.clone()), cx)))
+                .when(!track.note.is_empty(), |el| el.child(ui::long_field("Note", track.note.clone(), cx)))
                 .child(ui::section("Song", cx));
             if self.project.is_assigned(&first) {
                 panel = panel
                     .child(ui::field("Name", Input::new(&self.title_input).small(), cx))
                     .child(ui::field("Credits", Input::new(&self.credits_input).small(), cx))
-                    .child(ui::field(
-                        "From",
-                        div().text_xs().text_color(if self.missing.contains(&first) { cx.theme().danger } else { cx.theme().muted_foreground }).child(self.project.source(&first).to_string()),
-                        cx,
-                    ));
+                    .child(ui::long_field("From", self.project.source(&first).to_string(), cx));
             } else {
                 panel = panel.child(div().text_color(cx.theme().muted_foreground).child("No song yet. The game's own music plays."));
             }
@@ -2214,13 +2214,9 @@ impl PackMaker {
                 let final_source = self.project.final_source(&first).to_string();
                 let hear = first.clone();
                 panel = panel
-                    .child(ui::field(
+                    .child(ui::long_field(
                         "Own song",
-                        div().text_xs().text_color(cx.theme().muted_foreground).child(if final_source.is_empty() {
-                            "None, the main song plays faster".to_string()
-                        } else {
-                            final_source.clone()
-                        }),
+                        if final_source.is_empty() { "None, the main song plays faster".to_string() } else { final_source.clone() },
                         cx,
                     ))
                     .when(!final_source.is_empty(), |el| {

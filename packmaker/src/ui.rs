@@ -7,7 +7,7 @@ use std::time::Duration;
 use gpui_kit::component::{
     ActiveTheme as _, IconName, Sizable as _,
     button::{Button, ButtonVariants as _},
-    h_flex,
+    h_flex, v_flex,
 };
 use gpui_kit::*;
 
@@ -64,6 +64,7 @@ pub fn section(title: impl Into<SharedString>, cx: &App) -> Div {
 pub fn field(label: impl Into<SharedString>, value: impl IntoElement, cx: &App) -> Div {
     h_flex()
         .min_h_7()
+        .items_start()
         .gap_2()
         .child(div().w_24().flex_shrink_0().text_xs().text_color(cx.theme().muted_foreground).child(label.into()))
         .child(div().flex_1().min_w_0().child(value))
@@ -179,4 +180,13 @@ pub fn files(prompt: &str, multiple: bool) -> PathPromptOptions {
 
 pub fn folder(prompt: &str) -> PathPromptOptions {
     PathPromptOptions { files: false, directories: true, multiple: false, prompt: Some(prompt.to_string().into()) }
+}
+
+/// A label with a long value under it, like a note or a file path, so the text can wrap without running over the next row.
+pub fn long_field(label: impl Into<SharedString>, value: impl Into<SharedString>, cx: &App) -> Div {
+    v_flex()
+        .gap_0p5()
+        .py_1()
+        .child(div().text_xs().text_color(cx.theme().muted_foreground).child(label.into()))
+        .child(div().w_full().text_sm().child(value.into()))
 }
