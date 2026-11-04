@@ -23,8 +23,6 @@ pub struct Track {
     #[serde(default)]
     pub variant_of: String,
     #[serde(default)]
-    pub note: String,
-    #[serde(default)]
     pub can_have_final: bool,
 }
 

@@ -2160,11 +2160,11 @@ impl PackMaker {
         } else if let Some(track) = self.tracks.iter().find(|t| t.file == first).cloned() {
             panel = panel
                 .child(div().text_base().font_weight(FontWeight::SEMIBOLD).child(track.name.clone()))
-                .child(ui::section("Track", cx))
-                .child(ui::field("Category", track.category.clone(), cx))
-                .child(ui::field("File", format!("{}.brstm", track.file), cx))
-                .when(!track.variant_of.is_empty(), |el| el.child(ui::field("Version of", track.variant_of.clone(), cx)))
-                .when(!track.note.is_empty(), |el| el.child(ui::long_field("Note", track.note.clone(), cx)))
+                .child(div().text_xs().text_color(cx.theme().muted_foreground).child(if track.variant_of.is_empty() {
+                    format!("{}  ·  {}.brstm", track.category, track.file)
+                } else {
+                    format!("{}  ·  {}.brstm  ·  version of {}", track.category, track.file, track.variant_of)
+                }))
                 .child(ui::section("Song", cx));
             if self.project.is_assigned(&first) {
                 panel = panel
@@ -2180,7 +2180,6 @@ impl PackMaker {
                     .gap_2()
                     .flex_wrap()
                     .child(Button::new("prop-choose").small().primary().label("Choose song…").on_click(cx.listener(|this, _, window, cx| this.choose_songs(window, cx))))
-                    .child(Button::new("prop-find").small().outline().label("Find online…").on_click(cx.listener(|this, _, window, cx| this.open_download(window, cx))))
                     .when(any_assigned, |el| {
                         el.child(Button::new("prop-play").small().outline().icon(Lucide::Play).label("Play").on_click(cx.listener(move |this, _, window, cx| this.play_track(play_file.clone(), window, cx))))
                             .child(Button::new("prop-loop").small().outline().label("Edit loop…").on_click(cx.listener(|this, _, window, cx| this.open_loop_editor(window, cx))))
@@ -2192,14 +2191,6 @@ impl PackMaker {
             panel = panel
                 .child(ui::section("Sound", cx))
                 .child(self.step_row("vol", "Volume", volume, |p, f, s| p.set_volume(f, p.volume(f) + s as i64), cx))
-                .child(
-                    h_flex()
-                        .pl_24()
-                        .ml_2()
-                        .gap_2()
-                        .child(Button::new("louder").xsmall().ghost().label("Louder +1 dB").on_click(cx.listener(|this, _, _, cx| this.edit_selected(|p, f| p.set_volume(f, p.volume(f) + 1), cx))))
-                        .child(Button::new("quieter").xsmall().ghost().label("Quieter −1 dB").on_click(cx.listener(|this, _, _, cx| this.edit_selected(|p, f| p.set_volume(f, p.volume(f) - 1), cx)))),
-                )
                 .child(self.step_row("speed", "Speed", speed, |p, f, s| p.set_speed(f, ui::wrap(p.speed_index(f), s, SPEEDS.len())), cx))
                 .child(self.step_row("loop", "Loop", looping, |p, f, s| p.set_loop(f, ui::wrap(p.loop_index(f), s, LOOPS.len())), cx))
                 .child(self.step_row("fade", "Smooth the jump", crossfade, |p, f, s| p.set_crossfade(f, ui::wrap(p.crossfade_index(f), s, CROSSFADES.len())), cx));
@@ -2213,15 +2204,13 @@ impl PackMaker {
                 let final_source = self.project.final_source(&first).to_string();
                 let hear = first.clone();
                 panel = panel
-                    .child(ui::long_field(
-                        "Own song",
-                        if final_source.is_empty() {
-                            "None, the main song plays faster".to_string()
-                        } else {
-                            Path::new(&final_source).file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
-                        },
-                        cx,
-                    ))
+                    .when(!final_source.is_empty(), |el| {
+                        el.child(ui::field(
+                            "Own song",
+                            div().truncate().child(Path::new(&final_source).file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()),
+                            cx,
+                        ))
+                    })
                     .when(!final_source.is_empty(), |el| {
                         let volume = match self.project.final_volume(&first) {
                             None => "Same as the song".to_string(),
@@ -2271,11 +2260,6 @@ impl PackMaker {
             }
         }
 
-        if any_assigned {
-            panel = panel.child(
-                h_flex().pt_4().child(Button::new("prop-remove").small().ghost().label(if many { "Remove their songs" } else { "Remove song" }).on_click(cx.listener(|this, _, _, cx| this.remove_songs(cx)))),
-            );
-        }
         panel
     }
 
