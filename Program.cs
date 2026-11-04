@@ -84,6 +84,8 @@ internal static class Program
 
         switch (args[0])
         {
+            case "engine":
+                return Engine.Run(args);
             case "list":
             {
                 var rows = Catalog.Build(Option(args, "--rr") ?? Catalog.DetectRetroRewind(), out string message);

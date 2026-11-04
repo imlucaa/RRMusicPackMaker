@@ -1,0 +1,20 @@
+[package]
+name = "packmaker"
+version = "2.0.0-preview"
+edition = "2024"
+description = "Music Pack Maker for Retro Rewind, rebuilt on GPUI."
+publish = false
+
+[dependencies]
+gpui-kit = "0.9.0"
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+rodio = { version = "0.21", default-features = false, features = ["playback", "wav"] }
+dirs = "6"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true

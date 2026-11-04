@@ -10,3 +10,6 @@ TestResults/
 *.opus
 *.mp3
 *.wav
+
+# GPUI front end build output
+packmaker/target/
