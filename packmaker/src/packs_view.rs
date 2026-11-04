@@ -115,7 +115,7 @@ impl Render for PacksView {
                     let target = pack.clone();
                     h_flex()
                         .id(SharedString::from(format!("pack-{}", pack.folder)))
-                        .h_10()
+                        .h(px(46.))
                         .px_2()
                         .gap_2()
                         .when(ix % 2 == 1, |el| el.bg(cx.theme().list_even))

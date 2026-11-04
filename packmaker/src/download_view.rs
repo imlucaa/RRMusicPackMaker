@@ -162,13 +162,14 @@ impl Render for DownloadView {
             .child(
                 v_flex()
                     .id("results")
-                    .max_h(px(320.))
+                    .max_h(px(360.))
                     .overflow_y_scroll()
                     .children(self.results.clone().into_iter().enumerate().map(|(ix, found)| {
                         let link = found.link.clone();
                         h_flex()
                             .id(SharedString::from(format!("result-{}", found.link)))
-                            .h_8()
+                            .h(px(46.))
+                            .items_center()
                             .px_2()
                             .gap_2()
                             .when(ix % 2 == 1, |el| el.bg(cx.theme().list_even))
