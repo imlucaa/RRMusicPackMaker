@@ -207,6 +207,14 @@ impl Project {
         if !self.value["Options"].is_object() {
             self.value["Options"] = json!({});
         }
+        // Song names saved with a download's video ID lose it, so the pack and its credits read cleanly.
+        if let Some(rows) = self.value["Rows"].as_array_mut() {
+            for row in rows {
+                if let Some(song) = row["Song"].as_str().map(display_name).filter(|clean| Some(clean.as_str()) != row["Song"].as_str()) {
+                    row["Song"] = json!(song);
+                }
+            }
+        }
         self.reindex();
     }
 
@@ -324,15 +332,15 @@ impl Project {
         !self.source(file).trim().is_empty()
     }
 
-    /// The song's title, or its file name when it has none.
+    /// The song's title, or its file name when it has none. Without the video ID that downloads carry.
     pub fn song_title(&self, file: &str) -> String {
         let title = self.text(file, "Song");
         if !title.is_empty() {
-            return title.to_string();
+            return display_name(title);
         }
         Path::new(self.source(file))
             .file_stem()
-            .map(|stem| stem.to_string_lossy().into_owned())
+            .map(|stem| display_name(&stem.to_string_lossy()))
             .unwrap_or_default()
     }
 
@@ -402,7 +410,7 @@ impl Project {
     }
 
     pub fn assign(&mut self, file: &str, song: &Path) {
-        let title = song.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let title = song.file_stem().map(|s| display_name(&s.to_string_lossy())).unwrap_or_default();
         let row = self.row_mut(file);
         row.insert("Source".into(), json!(song.to_string_lossy()));
         row.insert("Song".into(), json!(title));
@@ -579,6 +587,24 @@ impl Settings {
     }
 }
 
+/// A song's name without the video ID that downloads carry at the end of their file names, like " [zn0otU_nw_Y]".
+pub fn display_name(name: &str) -> String {
+    let trimmed = name.trim_end();
+    let Some(open) = trimmed.len().checked_sub(13) else {
+        return name.to_string();
+    };
+    match trimmed.get(open..).map(str::as_bytes) {
+        Some(id)
+            if id[0] == b'['
+                && id[12] == b']'
+                && id[1..12].iter().all(|b| b.is_ascii_alphanumeric() || *b == b'_' || *b == b'-') =>
+        {
+            trimmed[..open].trim_end().to_string()
+        }
+        _ => name.to_string(),
+    }
+}
+
 /// Reads "m:ss.fff", "ss.fff" or "12.5s" as seconds.
 pub fn parse_time(text: &str) -> Option<f64> {
     let text = text.trim().trim_end_matches('s');
@@ -702,6 +728,16 @@ mod tests {
     }
 
     #[test]
+    fn video_ids_are_left_off_song_names() {
+        assert_eq!(display_name("Nettspend - F\u{ff0a}CK SWAG [zn0otU_nw_Y]"), "Nettspend - F\u{ff0a}CK SWAG");
+        assert_eq!(display_name("LVL - [intro] beat [NZGsrUjvOls]"), "LVL - [intro] beat");
+        assert_eq!(display_name("Song [live]"), "Song [live]");
+        assert_eq!(display_name("Plain"), "Plain");
+        assert_eq!(display_name("[short]"), "[short]");
+        assert_eq!(display_name(""), "");
+    }
+
+    #[test]
     fn times_read_back_as_written() {
         assert_eq!(parse_time("1:05.500000"), Some(65.5));
         assert_eq!(parse_time("12.5s"), Some(12.5));
@@ -757,5 +793,22 @@ mod tests {
         again.set_final_song_speed("6_N", None);
         assert_eq!(again.final_song_speed("6_N"), None);
         let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+#[cfg(test)]
+mod load_tests {
+    use super::*;
+
+    #[test]
+    fn a_saved_song_name_loses_its_video_id_on_load() {
+        let mut project = Project { path: std::env::temp_dir().join("unused.json"), value: Value::Null, index: HashMap::new() };
+        project.replace(json!({
+            "Options": {},
+            "Rows": [{ "File": "6_N", "Source": "C:/a.opus", "Song": "Artist - Title [zn0otU_nw_Y]", "Credits": "Artist" }]
+        }));
+        assert_eq!(project.song_title("6_N"), "Artist - Title");
+        assert_eq!(project.value()["Rows"][0]["Song"], "Artist - Title");
+        assert_eq!(project.credits("6_N"), "Artist");
     }
 }
