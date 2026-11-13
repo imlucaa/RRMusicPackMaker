@@ -435,11 +435,20 @@ internal static partial class Engine
         {
             issues = rr != null && Directory.Exists(rr) ? SetupCheck.Run(rr) : [],
             ffmpeg = FfmpegInstaller.IsInstalled,
+            ytdlp = Downloader.FindTool() != null,
             retroRewind = rr,
             newer,
         });
         return 0;
     }
+
+    /// <summary>Installs yt-dlp, which finds and downloads songs, or checks it's there.</summary>
+    private static int GetYtDlp() => Guard(() =>
+    {
+        string path = Downloader.EnsureToolAsync(message => Emit(new { @event = "log", message }), CancellationToken.None).GetAwaiter().GetResult();
+        Emit(new { @event = "done", message = "yt-dlp is installed.", where = path });
+        return 0;
+    });
 
     private static int GetFfmpeg() => Guard(() =>
     {

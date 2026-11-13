@@ -298,6 +298,7 @@ public static class PackImporter
             row.LoopStart = "";
             row.LoopEnd = "";
             row.Crossfade = 0;
+            row.StartDelay = 0;
             row.Speed = 1;
             row.KeepPitch = false;
             row.Reverb = false;

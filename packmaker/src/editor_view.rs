@@ -60,6 +60,11 @@ fn state_path() -> PathBuf {
 }
 
 impl EditorView {
+    /// True while the song name box has the keyboard.
+    pub fn typing(&self, window: &Window, cx: &App) -> bool {
+        self.name.read(cx).focus_handle(cx).is_focused(window)
+    }
+
     pub fn new(maker: WeakEntity<PackMaker>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let saved: Value = std::fs::read_to_string(state_path())
             .ok()
@@ -116,7 +121,7 @@ impl EditorView {
     /// Adds whole songs to the end, reading how long each is first.
     pub fn add_songs(&mut self, songs: Vec<PathBuf>, window: &mut Window, cx: &mut Context<Self>) {
         for song in songs {
-            let source = song.to_string_lossy().into_owned();
+            let source = crate::model::keep_copy(&song).to_string_lossy().into_owned();
             self.busy = Some(format!("Reading {}…", song.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()));
             cx.notify();
             ui::run_job(cx.weak_entity(), vec!["length".into(), "--song".into(), source.clone()], None, window, cx, |_, _, _| {}, move |this, result, _, cx| {

@@ -68,6 +68,12 @@ public sealed class TrackRow
 
     /// <summary>Seconds of blend at the loop jump. Zero keeps the jump exact.</summary>
     public double Crossfade { get; set; }
+
+    /// <summary>
+    /// When the song starts, in seconds. Above zero, it waits that long in silence first; below zero, it skips that
+    /// much of the song's start. For fanfares that the game cuts off, or that should hit a moment later.
+    /// </summary>
+    public double StartDelay { get; set; }
     public int VolumeDb { get; set; }
 
     /// <summary>How much faster the song plays. 1 is normal speed.</summary>
@@ -334,8 +340,13 @@ public static class Catalog
         var claimed = new HashSet<string>(rows.Select(r => r.FileBase), StringComparer.OrdinalIgnoreCase);
         var usage = new Dictionary<int, List<string>>();
         int trackCount = 0;
+        // Pulsar numbers every track in one list: retro tracks, then custom tracks, then battle arenas, each group
+        // filling whole cups of four. A track's music can be named by that number (strm/344_N.brstm) as well as by
+        // its file name, and battle arenas have been seen to need the number, so their songs are written both ways.
+        int numberOffset = 0;
         foreach (var (config, category) in new[] { ("ConfigRT.pul", CatRetro), ("ConfigCT.pul", CatCustom), ("ConfigBT.pul", CatBattle) })
         {
+            int mainIndex = 0;
             IEnumerable<PulsarConfig.Track> tracks;
             if (builtIn != null)
             {
@@ -350,6 +361,7 @@ public static class Catalog
             }
             foreach (var track in tracks)
             {
+                int? number = track.Variant == 0 ? numberOffset + mainIndex++ : null;
                 string stemN = FindExisting(strmFiles, track.FileStem + "_N", track.FileStem + "_n") ?? track.FileStem + "_N";
                 bool hasOwn = strmFiles.ContainsKey(stemN);
                 if (!hasOwn && track.Variant == 0)
@@ -377,6 +389,7 @@ public static class Catalog
                     Name = shownName,
                     VariantOf = variantOf,
                     FileBase = stemN,
+                    AliasBases = category == CatBattle && number != null && !hasOwn ? [$"{number}_N"] : [],
                     PulsarFinalBase = final,
                     Note = variantNote + (hasOwn ? "Has its own music in Retro Rewind."
                         : track.Variant > 0 ? "Variant. Uses the main track's music unless you set a song here."
@@ -393,6 +406,7 @@ public static class Catalog
                 }
                 claimed.Add(final);
             }
+            numberOffset += (mainIndex + 3) / 4 * 4;
         }
 
         foreach (var (slot, stockRow) in stockBySlot)

@@ -1,6 +1,6 @@
 [package]
 name = "packmaker"
-version = "2.0.0-preview"
+version = "2.0.0-preview.2"
 edition = "2024"
 description = "Music Pack Maker for Retro Rewind, rebuilt on GPUI."
 publish = false

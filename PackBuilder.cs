@@ -51,6 +51,7 @@ public sealed class ProjectRow
     public string LoopStart { get; set; } = "";
     public string LoopEnd { get; set; } = "";
     public double Crossfade { get; set; }
+    public double StartDelay { get; set; }
     public int VolumeDb { get; set; }
     public double Speed { get; set; } = 1;
     public bool KeepPitch { get; set; }
@@ -93,6 +94,7 @@ public sealed class Project
             LoopStart = r.LoopStart,
             LoopEnd = r.LoopEnd,
             Crossfade = r.Crossfade,
+            StartDelay = r.StartDelay,
             VolumeDb = r.VolumeDb,
             Speed = r.Speed,
             KeepPitch = r.KeepPitch,
@@ -126,6 +128,7 @@ public sealed class Project
             row.LoopStart = saved.LoopStart;
             row.LoopEnd = saved.LoopEnd;
             row.Crossfade = saved.Crossfade;
+            row.StartDelay = Math.Clamp(saved.StartDelay, -PackBuilder.MaxStartDelaySeconds, PackBuilder.MaxStartDelaySeconds);
             row.VolumeDb = saved.VolumeDb;
             row.Speed = saved.Speed > 0 ? saved.Speed : 1;
             row.KeepPitch = saved.KeepPitch;
@@ -191,6 +194,29 @@ public static class PackBuilder
 
     /// <summary>The game plays final laps 6% faster and higher, by raising the playback rate.</summary>
     public const double GameFinalSpeed = 1.06;
+
+    /// <summary>The furthest a song's start can be moved, either way.</summary>
+    public const double MaxStartDelaySeconds = 30;
+
+    /// <summary>The start delay choices, in seconds: skip up to 5 s of the song's start, or wait up to 5 s first.</summary>
+    public static readonly double[] StartDelayChoices = [-5, -4, -3, -2, -1.5, -1, -0.5, -0.25, 0, 0.25, 0.5, 1, 1.5, 2, 3, 4, 5];
+
+    /// <summary>The choice nearest to a saved start delay.</summary>
+    public static int StartDelayIndex(double seconds)
+    {
+        int best = 0;
+        for (int i = 1; i < StartDelayChoices.Length; i++)
+            if (Math.Abs(StartDelayChoices[i] - seconds) < Math.Abs(StartDelayChoices[best] - seconds))
+                best = i;
+        return best;
+    }
+
+    /// <summary>"0 s", "+1.5 s" (waits) or "-2 s" (skips), for the start delay control.</summary>
+    public static string StartDelayText(double seconds) => seconds == 0
+        ? "Starts right away"
+        : seconds > 0
+            ? $"Waits {seconds.ToString("0.##", CultureInfo.InvariantCulture)} s, then starts"
+            : $"Skips the first {(-seconds).ToString("0.##", CultureInfo.InvariantCulture)} s";
 
     public static readonly (string Text, double Speed)[] FinalSpeedChoices =
     [
@@ -451,7 +477,7 @@ public static class PackBuilder
         }
 
         string text = string.Join("\n",
-            "5",
+            "6",
             Stamp(row.Source),
             Stamp(row.FinalSource),
             row.FixedRate ?? options.SampleRate,
@@ -460,6 +486,7 @@ public static class PackBuilder
             row.LoopStart,
             row.LoopEnd,
             row.Crossfade.ToString(CultureInfo.InvariantCulture),
+            row.StartDelay.ToString(CultureInfo.InvariantCulture),
             EffectiveVolumeDb(options, row),
             options.Loudness,
             options.MultiChannelSlots ? row.StockChannels : 2,
@@ -509,7 +536,7 @@ public static class PackBuilder
 
         // A file that's kept as it is should sound here just as it will in the pack.
         bool asIs = UsesFileAsIs(row);
-        var song = Processing.Prepare(row.Source, rate, LoopMode.NoLoop, "", "", asIs ? Options.LoudnessOff : options.Loudness, null, asIs ? 0 : EffectiveVolumeDb(options, row), 0, row.Speed, row.KeepPitch, row.Reverb);
+        var song = Processing.Prepare(row.Source, rate, LoopMode.NoLoop, "", "", asIs ? Options.LoudnessOff : options.Loudness, null, asIs ? 0 : EffectiveVolumeDb(options, row), 0, row.Speed, row.KeepPitch, row.Reverb, row.StartDelay);
         return AudioIO.WriteRangePreview(song.Channels, rate, 0, song.Length / (double)rate + 1);
     }
 
@@ -530,7 +557,7 @@ public static class PackBuilder
         }
         else
         {
-            song = Processing.Prepare(row.Source, rate, LoopMode.NoLoop, "", "", options.Loudness, null, EffectiveVolumeDb(options, row), 0, row.Speed, row.KeepPitch, row.Reverb);
+            song = Processing.Prepare(row.Source, rate, LoopMode.NoLoop, "", "", options.Loudness, null, EffectiveVolumeDb(options, row), 0, row.Speed, row.KeepPitch, row.Reverb, row.StartDelay);
         }
         int fast = FinalRate(rate, row.FinalSpeed);
         return AudioIO.WriteRangePreview(song.Channels, fast, 0, song.Length / (double)fast + 1);
@@ -544,7 +571,7 @@ public static class PackBuilder
     {
         static bool IsBrstm(string path) => Path.GetExtension(path).Equals(".brstm", StringComparison.OrdinalIgnoreCase);
         return row.KeepFile && IsBrstm(row.Source) && (row.FinalSource.Length == 0 || IsBrstm(row.FinalSource))
-            && row.Speed == 1 && !row.Reverb && row.VolumeDb == 0 && row.Crossfade == 0 && row.Loop == LoopMode.Auto && row.FinalSpeed == GameFinalSpeed
+            && row.Speed == 1 && !row.Reverb && row.VolumeDb == 0 && row.Crossfade == 0 && row.StartDelay == 0 && row.Loop == LoopMode.Auto && row.FinalSpeed == GameFinalSpeed
             && !FinalSongHasOwnSettings(row);
     }
 
@@ -600,7 +627,7 @@ public static class PackBuilder
 
         int rate = row.FixedRate ?? options.SampleRate;
         var mode = row.Loop == LoopMode.Auto && row.DefaultNoLoop ? LoopMode.NoLoop : row.Loop;
-        var song = Processing.Prepare(row.Source, rate, mode, row.LoopStart, row.LoopEnd, options.Loudness, log, volume, row.Crossfade, row.Speed, row.KeepPitch, row.Reverb);
+        var song = Processing.Prepare(row.Source, rate, mode, row.LoopStart, row.LoopEnd, options.Loudness, log, volume, row.Crossfade, row.Speed, row.KeepPitch, row.Reverb, row.StartDelay);
 
         // The file stops at the loop end, so anything after it is not stored.
         double seconds = (song.Loop ? song.LoopEnd : song.Length) / (double)rate;

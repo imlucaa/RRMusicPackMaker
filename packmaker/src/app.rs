@@ -28,7 +28,7 @@ use crate::download_view::DownloadView;
 use crate::editor_view::EditorView;
 use crate::engine;
 use crate::loop_view::LoopView;
-use crate::model::{self, CROSSFADES, Catalog, FINAL_SPEEDS, Group, LOOPS, NEW_PACK, Packs, Project, SPEEDS, Settings, Song, Track};
+use crate::model::{self, CROSSFADES, Catalog, FINAL_SPEEDS, Group, LOOPS, NEW_PACK, Packs, Project, SPEEDS, START_DELAYS, Settings, Song, Track, start_delay_text};
 use crate::packs_view::PacksView;
 use crate::player::{PlayState, Player};
 use crate::settings_view::SettingsView;
@@ -40,7 +40,7 @@ actions!(
     [
         PlayPause, Stop, PlayNext, PlayPrevious, PlaySelected, RemoveSongs, SelectAll, SelectEmpty, SelectFilled,
         MoveUp, MoveDown, ExtendUp, ExtendDown, FocusSearch, AddSongs, SaveNow, ExportZip, ExportFolder, AddToGame,
-        RemoveFromGame, ToggleWii, OpenClassic, Reload, ToggleConsole, Quit, OpenSettings, ImportFolder, ImportZip,
+        RemoveFromGame, FindMoved, ToggleWii, OpenClassic, Reload, ToggleConsole, Quit, OpenSettings, ImportFolder, ImportZip,
         ShowInstalled, FindOnline, EditLoop, HearFinal, NewPack, DeletePack, ShowTracks, ShowSongs, ShowEditor,
         ShowExported, OpenReleases, About, Louder, Quieter
     ]
@@ -187,6 +187,24 @@ pub struct PackMaker {
 
 impl PackMaker {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        // Changes are saved a moment after they happen; anything still waiting is written when the app or its
+        // window closes, however it's closed (Exit, Ctrl+Q or the window's X).
+        cx.on_app_quit(|this: &mut Self, _| {
+            if !this.saved {
+                let _ = this.project.save();
+            }
+            async {}
+        })
+        .detach();
+        let me = cx.weak_entity();
+        window.on_window_should_close(cx, move |_, cx| {
+            let _ = me.update(cx, |this, _| {
+                if !this.saved {
+                    let _ = this.project.save();
+                }
+            });
+            true
+        });
         let project = Project::load();
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Filter tracks, songs or files"));
         let pack_name = cx.new(|cx| InputState::new(window, cx).default_value(project.pack_name()));
@@ -337,6 +355,7 @@ impl PackMaker {
         self.busy = Some(Busy { label: "Loading tracks".into(), done: 0, total: 0 });
         let work = cx.background_executor().spawn(async move {
             let catalog = engine::run_json::<Catalog>(&["catalog"]);
+            let _ = model::keep_library_songs();
             let songs = engine::run_json::<Vec<Song>>(&["songs-full"]);
             (catalog, songs)
         });
@@ -1243,6 +1262,15 @@ impl PackMaker {
         .detach();
     }
 
+    /// True while a text box has the keyboard. Space, Enter, Delete, Ctrl+A and the arrows then type in it instead of
+    /// playing a song or moving the selection.
+    fn typing(&self, window: &Window, cx: &App) -> bool {
+        [&self.search, &self.pack_name, &self.title_input, &self.credits_input]
+            .iter()
+            .any(|input| input.read(cx).focus_handle(cx).is_focused(window))
+            || self.editor.read(cx).typing(window, cx)
+    }
+
     fn play_pause(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.player.state() == PlayState::Stopped {
             if let Some(track) = self.cursor {
@@ -1285,6 +1313,33 @@ impl PackMaker {
 
     // ----- Export ----------------------------------------------------------------------------------------------
 
+    /// Songs that were moved: pick the folder they're in now, and every missing song is found again by its file name
+    /// (that folder and the folders inside it are searched).
+    fn find_moved(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let missing = self.project.missing_songs();
+        if missing.is_empty() {
+            self.say("Every song is where the pack expects it. Nothing to find.", cx);
+            return;
+        }
+        let picked = cx.prompt_for_paths(ui::folder("Folder the songs are in now"));
+        cx.spawn_in(window, async move |this, cx| {
+            let Some(folder) = picked.await.ok().and_then(Result::ok).flatten().and_then(|p| p.into_iter().next()) else { return };
+            let found = cx.background_executor().spawn(async move { model::songs_under(&folder) }).await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                let relinked = this.project.relink(&found);
+                let still = this.project.missing_songs().len();
+                this.changed(cx);
+                let text = if still == 0 {
+                    format!("Found all {relinked} moved song{}.", if relinked == 1 { "" } else { "s" })
+                } else {
+                    format!("Found {relinked} moved song{}. {still} still missing: try another folder.", if relinked == 1 { "" } else { "s" })
+                };
+                window.push_notification(Notification::info(text).title("Moved songs"), cx);
+            });
+        })
+        .detach();
+    }
+
     fn export(&mut self, mode: &'static str, window: &mut Window, cx: &mut Context<Self>) {
         if self.busy.is_some() {
             return;
@@ -1292,6 +1347,19 @@ impl PackMaker {
         if !self.tracks.iter().any(|t| self.project.is_assigned(&t.file)) {
             self.say("Add a song to at least one track first.", cx);
             return;
+        }
+        // Songs that were moved can't go in the pack: say so before exporting, and how to fix it.
+        let missing = self.project.missing_songs().len();
+        if missing > 0 {
+            window.push_notification(
+                Notification::warning(format!(
+                    "{missing} song{} moved or deleted, so {} left out. Use Pack > Find moved songs… and pick the folder they're in now.",
+                    if missing == 1 { " was" } else { "s were" },
+                    if missing == 1 { "it's" } else { "they're" }
+                ))
+                .title("Moved songs"),
+                cx,
+            );
         }
         if !self.ffmpeg {
             window.push_notification(Notification::warning("Making packs needs FFmpeg. Install it from Settings.").title("FFmpeg"), cx);
@@ -1479,6 +1547,8 @@ impl PackMaker {
                 }
                 m.menu("New pack", Box::new(NewPack))
                     .menu("Delete this pack…", Box::new(DeletePack))
+                    .separator()
+                    .menu("Find moved songs…", Box::new(FindMoved))
                     .separator()
                     .menu_with_check("Made for a real Wii", wii, Box::new(ToggleWii))
                     .menu("Add to the game", Box::new(AddToGame))
@@ -2127,6 +2197,7 @@ impl PackMaker {
         let looping = same(&|f| LOOPS[self.project.loop_index(f)].1.into());
         let final_speed = same(&|f| FINAL_SPEEDS[self.project.final_speed_index(f)].0.into());
         let crossfade = same(&|f| CROSSFADES[self.project.crossfade_index(f)].0.into());
+        let start = same(&|f| start_delay_text(START_DELAYS[self.project.start_delay_index(f)]));
         let any_assigned = files.iter().any(|f| self.project.is_assigned(f));
         let can_final = files.iter().any(|f| self.tracks.iter().any(|t| &t.file == f && t.can_have_final));
 
@@ -2193,7 +2264,11 @@ impl PackMaker {
                 .child(self.step_row("vol", "Volume", volume, |p, f, s| p.set_volume(f, p.volume(f) + s as i64), cx))
                 .child(self.step_row("speed", "Speed", speed, |p, f, s| p.set_speed(f, ui::wrap(p.speed_index(f), s, SPEEDS.len())), cx))
                 .child(self.step_row("loop", "Loop", looping, |p, f, s| p.set_loop(f, ui::wrap(p.loop_index(f), s, LOOPS.len())), cx))
-                .child(self.step_row("fade", "Smooth the jump", crossfade, |p, f, s| p.set_crossfade(f, ui::wrap(p.crossfade_index(f), s, CROSSFADES.len())), cx));
+                .child(self.step_row("fade", "Smooth the jump", crossfade, |p, f, s| p.set_crossfade(f, ui::wrap(p.crossfade_index(f), s, CROSSFADES.len())), cx))
+                .child(self.step_row("start", "When it starts", start, |p, f, s| {
+                    let next = (p.start_delay_index(f) as isize + s).clamp(0, START_DELAYS.len() as isize - 1);
+                    p.set_start_delay(f, next as usize)
+                }, cx));
         }
 
         if can_final && (any_assigned || many) {
@@ -2342,7 +2417,13 @@ impl Render for PackMaker {
                     .size_full()
                     .text_color(cx.theme().foreground)
                     .text_sm()
-                    .on_action(cx.listener(|this, _: &PlayPause, window, cx| this.play_pause(window, cx)))
+                    // The playlist keys hand over to a text box that has the keyboard (propagate lets it type).
+                    .on_action(cx.listener(|this, _: &PlayPause, window, cx| {
+                        if this.typing(window, cx) {
+                            return cx.propagate();
+                        }
+                        this.play_pause(window, cx)
+                    }))
                     .on_action(cx.listener(|this, _: &Stop, _, cx| {
                         this.player.stop();
                         cx.notify();
@@ -2350,6 +2431,9 @@ impl Render for PackMaker {
                     .on_action(cx.listener(|this, _: &PlayNext, window, cx| this.play_step(1, window, cx)))
                     .on_action(cx.listener(|this, _: &PlayPrevious, window, cx| this.play_step(-1, window, cx)))
                     .on_action(cx.listener(|this, _: &PlaySelected, window, cx| {
+                        if this.typing(window, cx) {
+                            return cx.propagate();
+                        }
                         if let Some(track) = this.cursor {
                             let file = this.tracks[track].file.clone();
                             this.play_track(file, window, cx);
@@ -2360,14 +2444,44 @@ impl Render for PackMaker {
                             this.play_track_lap(file, true, window, cx);
                         }
                     }))
-                    .on_action(cx.listener(|this, _: &RemoveSongs, _, cx| this.remove_songs(cx)))
-                    .on_action(cx.listener(|this, _: &SelectAll, _, cx| this.select_where(|_, _| true, cx)))
+                    .on_action(cx.listener(|this, _: &RemoveSongs, window, cx| {
+                        if this.typing(window, cx) {
+                            return cx.propagate();
+                        }
+                        this.remove_songs(cx)
+                    }))
+                    .on_action(cx.listener(|this, _: &SelectAll, window, cx| {
+                        if this.typing(window, cx) {
+                            return cx.propagate();
+                        }
+                        this.select_where(|_, _| true, cx)
+                    }))
                     .on_action(cx.listener(|this, _: &SelectEmpty, _, cx| this.select_where(|p, t| !p.is_assigned(&t.file), cx)))
                     .on_action(cx.listener(|this, _: &SelectFilled, _, cx| this.select_where(|p, t| p.is_assigned(&t.file), cx)))
-                    .on_action(cx.listener(|this, _: &MoveUp, _, cx| this.move_cursor(-1, false, cx)))
-                    .on_action(cx.listener(|this, _: &MoveDown, _, cx| this.move_cursor(1, false, cx)))
-                    .on_action(cx.listener(|this, _: &ExtendUp, _, cx| this.move_cursor(-1, true, cx)))
-                    .on_action(cx.listener(|this, _: &ExtendDown, _, cx| this.move_cursor(1, true, cx)))
+                    .on_action(cx.listener(|this, _: &MoveUp, window, cx| {
+                        if this.typing(window, cx) {
+                            return cx.propagate();
+                        }
+                        this.move_cursor(-1, false, cx)
+                    }))
+                    .on_action(cx.listener(|this, _: &MoveDown, window, cx| {
+                        if this.typing(window, cx) {
+                            return cx.propagate();
+                        }
+                        this.move_cursor(1, false, cx)
+                    }))
+                    .on_action(cx.listener(|this, _: &ExtendUp, window, cx| {
+                        if this.typing(window, cx) {
+                            return cx.propagate();
+                        }
+                        this.move_cursor(-1, true, cx)
+                    }))
+                    .on_action(cx.listener(|this, _: &ExtendDown, window, cx| {
+                        if this.typing(window, cx) {
+                            return cx.propagate();
+                        }
+                        this.move_cursor(1, true, cx)
+                    }))
                     .on_action(cx.listener(|this, _: &Louder, _, cx| this.edit_selected(|p, f| p.set_volume(f, p.volume(f) + 1), cx)))
                     .on_action(cx.listener(|this, _: &Quieter, _, cx| this.edit_selected(|p, f| p.set_volume(f, p.volume(f) - 1), cx)))
                     .on_action(cx.listener(|this, _: &EditLoop, window, cx| this.open_loop_editor(window, cx)))
@@ -2385,6 +2499,7 @@ impl Render for PackMaker {
                         }
                     }))
                     .on_action(cx.listener(|this, _: &ExportZip, window, cx| this.export("zip", window, cx)))
+                    .on_action(cx.listener(|this, _: &FindMoved, window, cx| this.find_moved(window, cx)))
                     .on_action(cx.listener(|this, _: &ExportFolder, window, cx| this.export("folder", window, cx)))
                     .on_action(cx.listener(|this, _: &AddToGame, window, cx| this.export("game", window, cx)))
                     .on_action(cx.listener(|this, _: &ShowExported, _, cx| match this.last_export.clone() {

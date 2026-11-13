@@ -108,6 +108,24 @@ public class CatalogTests
             Assert.Contains(rows, r => r.FileBase == file);
         Assert.Equal(rows.Count, rows.Select(r => r.FileBase).Distinct(StringComparer.OrdinalIgnoreCase).Count());
     }
+
+    [Fact]
+    public void Build_BattleArenas_AlsoWriteTheirTrackNumber()
+    {
+        // Retro Rewind 6.13.4: 176 retro tracks (44 cups) and 140 custom tracks (35 cups) come first, so the battle
+        // arenas start at 316 and Chain Chomp Wheel is 344. Pulsar can name a track's music by that number.
+        var rows = Catalog.Build(null, out _);
+        var chomp = rows.Single(r => r.Category == Catalog.CatBattle && r.Name == "Wii Chain Chomp Wheel");
+        Assert.Equal("casino_battle_N", chomp.FileBase);
+        Assert.Equal(["344_N"], chomp.AliasBases);
+        Assert.Equal(["316_N"], rows.Single(r => r.Category == Catalog.CatBattle && r.Name == "SNES Battle Course 4").AliasBases);
+        // Every arena that borrows music gets its number; the ones with their own music keep one name. Same list as the site.
+        Assert.Equal(
+            ["316_N", "322_N", "326_N", "328_N", "335_N", "341_N", "342_N", "343_N", "344_N", "345_N"],
+            rows.Where(r => r.Category == Catalog.CatBattle).SelectMany(r => r.AliasBases).Order(StringComparer.Ordinal).ToArray());
+        // Race tracks keep one name.
+        Assert.All(rows.Where(r => r.Category is Catalog.CatRetro or Catalog.CatCustom or Catalog.CatRegs), r => Assert.Empty(r.AliasBases));
+    }
 }
 
 public class SortingTests

@@ -164,6 +164,24 @@ pub const LOOPS: &[(&str, &str)] = &[
 ];
 
 pub const CROSSFADES: &[(&str, f64)] = &[("Off", 0.0), ("0.25 s", 0.25), ("0.5 s", 0.5), ("1 s", 1.0), ("2 s", 2.0)];
+/// When a song starts, in seconds: below zero skips that much of its start, above zero waits that long first.
+/// The same choices as the classic window's "When it starts".
+pub const START_DELAYS: &[f64] = &[-5.0, -4.0, -3.0, -2.0, -1.5, -1.0, -0.5, -0.25, 0.0, 0.25, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0];
+
+/// "Starts right away", "Waits 1.5 s, then starts" or "Skips the first 2 s".
+pub fn start_delay_text(seconds: f64) -> String {
+    let n = |v: f64| {
+        let t = format!("{v:.2}");
+        t.trim_end_matches('0').trim_end_matches('.').to_string()
+    };
+    if seconds == 0.0 {
+        "Starts right away".into()
+    } else if seconds > 0.0 {
+        format!("Waits {} s, then starts", n(seconds))
+    } else {
+        format!("Skips the first {} s", n(-seconds))
+    }
+}
 pub const SAMPLE_RATES: &[i64] = &[32000, 24000, 22050, 16000];
 pub const LOUDNESS: &[&str] = &["Even loudness", "Peak only", "Off"];
 pub const QUALITIES: &[(&str, i64)] =
@@ -212,6 +230,15 @@ impl Project {
             for row in rows {
                 if let Some(song) = row["Song"].as_str().map(display_name).filter(|clean| Some(clean.as_str()) != row["Song"].as_str()) {
                     row["Song"] = json!(song);
+                }
+                // Packs made before the app kept its own copies: copy their songs in now, once.
+                for field in ["Source", "FinalSource"] {
+                    if let Some(path) = row[field].as_str().filter(|p| !p.trim().is_empty()).map(PathBuf::from) {
+                        let kept = keep_copy(&path);
+                        if kept != path {
+                            row[field] = json!(kept.to_string_lossy());
+                        }
+                    }
                 }
             }
         }
@@ -328,6 +355,47 @@ impl Project {
         self.text(file, "Source")
     }
 
+    /// Song files the pack uses that aren't where they were any more (moved, renamed or deleted).
+    pub fn missing_songs(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for row in self.value["Rows"].as_array().into_iter().flatten() {
+            for field in ["Source", "FinalSource"] {
+                if let Some(path) = row[field].as_str().filter(|p| !p.trim().is_empty()) {
+                    if !Path::new(path).exists() && !out.iter().any(|p| p == path) {
+                        out.push(path.to_string());
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Points every missing song at a file with the same name in `found` (file name, lower case -> path).
+    /// Returns how many songs were found again.
+    pub fn relink(&mut self, found: &HashMap<String, PathBuf>) -> usize {
+        let mut relinked = 0;
+        let mut done: Vec<String> = Vec::new();
+        if let Some(rows) = self.value["Rows"].as_array_mut() {
+            for row in rows {
+                for field in ["Source", "FinalSource"] {
+                    let Some(path) = row[field].as_str().filter(|p| !p.trim().is_empty()).map(str::to_string) else { continue };
+                    if Path::new(&path).exists() {
+                        continue;
+                    }
+                    let name = Path::new(&path).file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
+                    if let Some(new_path) = found.get(&name) {
+                        row[field] = json!(new_path.to_string_lossy());
+                        if !done.contains(&path) {
+                            done.push(path);
+                            relinked += 1;
+                        }
+                    }
+                }
+            }
+        }
+        relinked
+    }
+
     pub fn is_assigned(&self, file: &str) -> bool {
         !self.source(file).trim().is_empty()
     }
@@ -381,6 +449,14 @@ impl Project {
         CROSSFADES.iter().position(|(_, s)| (s - seconds).abs() < 1e-6).unwrap_or(0)
     }
 
+    /// The start delay choice nearest the saved value.
+    pub fn start_delay_index(&self, file: &str) -> usize {
+        let seconds = self.number(file, "StartDelay", 0.0);
+        (0..START_DELAYS.len())
+            .min_by(|&a, &b| (START_DELAYS[a] - seconds).abs().total_cmp(&(START_DELAYS[b] - seconds).abs()))
+            .unwrap_or(0)
+    }
+
     pub fn final_source(&self, file: &str) -> &str {
         self.text(file, "FinalSource")
     }
@@ -411,8 +487,9 @@ impl Project {
 
     pub fn assign(&mut self, file: &str, song: &Path) {
         let title = song.file_stem().map(|s| display_name(&s.to_string_lossy())).unwrap_or_default();
+        let kept = keep_copy(song);
         let row = self.row_mut(file);
-        row.insert("Source".into(), json!(song.to_string_lossy()));
+        row.insert("Source".into(), json!(kept.to_string_lossy()));
         row.insert("Song".into(), json!(title));
         row.insert("KeepFile".into(), json!(false));
         row.insert("LoopStart".into(), json!(""));
@@ -460,8 +537,13 @@ impl Project {
         self.row_mut(file).insert("Crossfade".into(), json!(seconds));
     }
 
+    pub fn set_start_delay(&mut self, file: &str, choice: usize) {
+        let seconds = START_DELAYS[choice.min(START_DELAYS.len() - 1)];
+        self.row_mut(file).insert("StartDelay".into(), json!(seconds));
+    }
+
     pub fn set_final_source(&mut self, file: &str, song: Option<&Path>) {
-        let value = song.map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
+        let value = song.map(|p| keep_copy(p).to_string_lossy().into_owned()).unwrap_or_default();
         self.row_mut(file).insert("FinalSource".into(), json!(value));
     }
 
@@ -631,13 +713,52 @@ pub fn add_to_library(paths: &[PathBuf]) -> Result<()> {
         value["Songs"] = json!([]);
     }
     let songs = value["Songs"].as_array_mut().expect("songs are an array");
+    // The library points at the app's own copy, so the original can be moved or deleted.
     for song in paths.iter().rev() {
-        let text = song.to_string_lossy().to_string();
+        let text = keep_copy(song).to_string_lossy().to_string();
         if !songs.iter().any(|s| s.as_str().is_some_and(|s| s.eq_ignore_ascii_case(&text))) {
             songs.insert(0, json!(text));
         }
     }
     write_json(&path, &value)
+}
+
+/// Libraries from before the app kept its own copies: copies their songs in now, once, and moves each song's saved
+/// edits to the copy. Songs that are already gone stay as they are.
+pub fn keep_library_songs() -> Result<()> {
+    let path = data_folder().join("songs.json");
+    let Ok(mut value) = read_json(&path) else { return Ok(()) };
+    let mut moved = Vec::new();
+    if let Some(songs) = value["Songs"].as_array_mut() {
+        for song in songs.iter_mut() {
+            let Some(old) = song.as_str().map(PathBuf::from) else { continue };
+            let kept = keep_copy(&old);
+            if kept != old {
+                *song = json!(kept.to_string_lossy());
+                moved.push((old.to_string_lossy().into_owned(), kept.to_string_lossy().into_owned()));
+            }
+        }
+    }
+    let mut changed = !moved.is_empty();
+    if let Some(edits) = value["Edits"].as_object_mut() {
+        for (old, kept) in &moved {
+            let key = edits.keys().find(|k| k.eq_ignore_ascii_case(old)).cloned();
+            if let Some(edit) = key.and_then(|k| edits.remove(&k)) {
+                edits.insert(kept.clone(), edit);
+            }
+        }
+        // An edit can stitch clips from other files; keep those too.
+        for clip in edits.values_mut().filter_map(|e| e.as_array_mut()).flatten() {
+            if let Some(old) = clip["Source"].as_str().map(PathBuf::from) {
+                let kept = keep_copy(&old);
+                if kept != old {
+                    clip["Source"] = json!(kept.to_string_lossy());
+                    changed = true;
+                }
+            }
+        }
+    }
+    if changed { write_json(&path, &value) } else { Ok(()) }
 }
 
 /// Writes a small JSON file for an engine command, so long lists of paths stay off the command line.
@@ -716,6 +837,61 @@ pub fn format_time(seconds: f64) -> String {
     format!("{}:{:02}", total / 60, total % 60)
 }
 
+/// The app's own copies of the songs on tracks, so moving, renaming or deleting the originals never breaks a pack.
+pub fn kept_songs_folder() -> PathBuf {
+    data_folder().join("Songs")
+}
+
+/// A song the pack can always find: songs already in the app's folder (downloads, edits, kept copies) stay where they
+/// are; anything else is copied into the kept songs folder once. Same name, same size: the copy is reused. If the
+/// copy can't be made (or the file isn't there), the path is returned as it was.
+pub fn keep_copy(song: &Path) -> PathBuf {
+    let data = data_folder();
+    if song.starts_with(&data) || !song.is_file() {
+        return song.to_path_buf();
+    }
+    let folder = kept_songs_folder();
+    if std::fs::create_dir_all(&folder).is_err() {
+        return song.to_path_buf();
+    }
+    let size = std::fs::metadata(song).map(|m| m.len()).unwrap_or(0);
+    let stem = song.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "song".into());
+    let ext = song.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+    for n in 1..1000 {
+        let name = if n == 1 { format!("{stem}{ext}") } else { format!("{stem} ({n}){ext}") };
+        let target = folder.join(name);
+        match std::fs::metadata(&target) {
+            Ok(m) if m.len() == size => return target, // already kept
+            Ok(_) => continue,                           // a different song with this name
+            Err(_) => {
+                return if std::fs::copy(song, &target).is_ok() { target } else { song.to_path_buf() };
+            }
+        }
+    }
+    song.to_path_buf()
+}
+
+/// Every file in a folder and the folders inside it, by file name (lower case). The first one found wins when two
+/// share a name. Unreadable folders are skipped.
+pub fn songs_under(folder: &Path) -> HashMap<String, PathBuf> {
+    let mut found = HashMap::new();
+    let mut stack = vec![(folder.to_path_buf(), 0u32)];
+    while let Some((dir, depth)) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if depth < 12 {
+                    stack.push((path, depth + 1));
+                }
+            } else if let Some(name) = path.file_name() {
+                found.entry(name.to_string_lossy().to_lowercase()).or_insert(path);
+            }
+        }
+    }
+    found
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -725,6 +901,79 @@ mod tests {
         let mut names = vec!["10 ten", "2 two", "1 one"];
         names.sort_by(|a, b| natural_cmp(a, b));
         assert_eq!(names, ["1 one", "2 two", "10 ten"]);
+    }
+
+    /// Run with RRMUSIC_DATA pointing at a scratch folder (the test skips itself otherwise, so it never touches the
+    /// real app folder).
+    #[test]
+    fn songs_survive_being_moved_or_deleted() {
+        let Ok(data) = std::env::var("RRMUSIC_DATA") else { return };
+        let outside = PathBuf::from(&data).with_extension("outside");
+        std::fs::create_dir_all(&outside).unwrap();
+        let original = outside.join("Moved Song.mp3");
+        std::fs::write(&original, b"song bytes").unwrap();
+
+        // Putting a song on a track keeps a copy in the app's folder, and uses it.
+        let mut project = Project { path: PathBuf::new(), value: json!({ "Options": {}, "Rows": [] }), index: HashMap::new() };
+        project.assign("6_N", &original);
+        let kept = PathBuf::from(project.source("6_N"));
+        assert!(kept.starts_with(kept_songs_folder()), "{kept:?}");
+        assert_eq!(std::fs::read(&kept).unwrap(), b"song bytes");
+        // The same song again reuses that copy.
+        assert_eq!(keep_copy(&original), kept);
+
+        // Deleting the original changes nothing for the pack.
+        std::fs::remove_file(&original).unwrap();
+        assert!(project.missing_songs().is_empty());
+
+        // A pack pointing at a moved file finds it again by name in the folder it was moved to.
+        let moved_to = outside.join("new place");
+        std::fs::create_dir_all(&moved_to).unwrap();
+        std::fs::write(moved_to.join("Other.ogg"), b"x").unwrap();
+        project.value["Rows"].as_array_mut().unwrap().push(json!({ "File": "7_N", "Source": outside.join("gone/Other.ogg").to_string_lossy() }));
+        project.reindex();
+        assert_eq!(project.missing_songs().len(), 1);
+        assert_eq!(project.relink(&songs_under(&outside)), 1);
+        assert!(project.missing_songs().is_empty());
+
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// Same scratch-folder rule as above.
+    #[test]
+    fn library_songs_survive_being_moved_or_deleted() {
+        let Ok(data) = std::env::var("RRMUSIC_DATA") else { return };
+        let outside = PathBuf::from(&data).with_extension("library-outside");
+        std::fs::create_dir_all(&outside).unwrap();
+        let added = outside.join("Library Song.mp3");
+        let old = outside.join("Old Library Song.ogg");
+        let clip = outside.join("Clip.wav");
+        for (path, bytes) in [(&added, &b"added"[..]), (&old, b"old"), (&clip, b"clip")] {
+            std::fs::write(path, bytes).unwrap();
+        }
+
+        // A library from before: the original path, with an edit that stitches in another file.
+        let list = data_folder().join("songs.json");
+        let key = old.to_string_lossy().into_owned();
+        write_json(&list, &json!({ "Songs": [key.clone()], "Edits": { key.clone(): [{ "Source": clip.to_string_lossy(), "Start": 0, "End": 1 }] } })).unwrap();
+        keep_library_songs().unwrap();
+        // New songs are kept as they're added.
+        add_to_library(&[added.clone()]).unwrap();
+        for path in [&added, &old, &clip] {
+            std::fs::remove_file(path).unwrap();
+        }
+
+        let saved = read_json(&list).unwrap();
+        let songs: Vec<PathBuf> = saved["Songs"].as_array().unwrap().iter().map(|s| PathBuf::from(s.as_str().unwrap())).collect();
+        assert_eq!(songs.len(), 2);
+        assert!(songs.iter().all(|s| s.starts_with(kept_songs_folder()) && s.is_file()), "{songs:?}");
+        let edits = saved["Edits"].as_object().unwrap();
+        assert!(!edits.contains_key(&key));
+        let (edit_key, clips) = edits.iter().next().unwrap();
+        assert!(PathBuf::from(edit_key).is_file());
+        assert!(PathBuf::from(clips[0]["Source"].as_str().unwrap()).is_file());
+
+        let _ = std::fs::remove_dir_all(&outside);
     }
 
     #[test]

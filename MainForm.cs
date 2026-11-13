@@ -99,6 +99,7 @@ public sealed class MainForm : Form
     private readonly ModernButton _editLoop = new() { Text = "Edit loop", Height = 28, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 4, 8) };
     private readonly ModernButton _hearJump = new() { Text = "▶  Hear the jump", Height = 28, Dock = DockStyle.Fill, Margin = new Padding(4, 0, 0, 8) };
     private readonly ComboBox _crossfade = new FlatCombo { Dock = DockStyle.Top };
+    private readonly ComboBox _startDelay = new FlatCombo { Dock = DockStyle.Top };
     private readonly ComboBox _volume = new FlatCombo { Dock = DockStyle.Top, MaxDropDownItems = 14 };
     private readonly ComboBox _speed = new FlatCombo { Dock = DockStyle.Top, MaxDropDownItems = 14 };
     private readonly Label _finalCaption = new() { Text = "Different song on the final lap", AutoSize = true, Margin = new Padding(0, 12, 0, 4) };
@@ -607,6 +608,7 @@ public sealed class MainForm : Form
         Pair(_editLoop, _hearJump);
         Section("Sound");
         Field("Smooth the jump", _crossfade);
+        Field("When it starts", _startDelay);
         Field("Volume", _volume);
         Field("Speed", _speed);
         Wide(_finalCaption);
@@ -635,6 +637,8 @@ public sealed class MainForm : Form
             _loopMode.Items.Add(LoopModeText(mode));
         foreach (var (text, _) in PackBuilder.CrossfadeChoices)
             _crossfade.Items.Add(text);
+        foreach (double seconds in PackBuilder.StartDelayChoices)
+            _startDelay.Items.Add(PackBuilder.StartDelayText(seconds));
         foreach (int db in PackBuilder.VolumeChoices)
             _volume.Items.Add(db == 0 ? "Normal" : $"{db:+0;-0} dB");
         foreach (var choice in PackBuilder.SpeedChoices)
@@ -710,6 +714,7 @@ public sealed class MainForm : Form
             UpdateThumb();
         });
         _crossfade.SelectedIndexChanged += (_, _) => DetailChanged(r => r.Crossfade = PackBuilder.CrossfadeChoices[Math.Max(0, _crossfade.SelectedIndex)].Seconds);
+        _startDelay.SelectedIndexChanged += (_, _) => DetailChanged(r => r.StartDelay = PackBuilder.StartDelayChoices[Math.Max(0, _startDelay.SelectedIndex)]);
         _volume.SelectedIndexChanged += (_, _) =>
         {
             DetailChanged(r => r.VolumeDb = PackBuilder.VolumeChoices[Math.Max(0, _volume.SelectedIndex)]);
@@ -1727,6 +1732,7 @@ public sealed class MainForm : Form
         _credits.Box.Text = row?.Credits ?? "";
         _loopMode.SelectedIndex = (int)(row?.Loop ?? LoopMode.Auto);
         _crossfade.SelectedIndex = PackBuilder.CrossfadeIndex(row?.Crossfade ?? 0);
+        _startDelay.SelectedIndex = PackBuilder.StartDelayIndex(row?.StartDelay ?? 0);
         _volume.SelectedIndex = PackBuilder.VolumeIndex(row?.VolumeDb ?? 0);
         _speed.SelectedIndex = PackBuilder.SpeedIndex(row?.Speed ?? 1, row?.KeepPitch ?? false, row?.Reverb ?? false);
         ShowPickedSong();

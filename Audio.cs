@@ -332,7 +332,7 @@ public static class Processing
     private const double ReverbJumpBlendSeconds = 0.25;
 
     /// <summary>Turns a row's source and settings into audio ready to encode.</summary>
-    public static Song Prepare(string source, int rate, LoopMode mode, string loopStart, string loopEnd, string loudness, Action<string>? log = null, double volumeDb = 0, double crossfadeSeconds = 0, double speed = 1, bool keepPitch = false, bool reverb = false)
+    public static Song Prepare(string source, int rate, LoopMode mode, string loopStart, string loopEnd, string loudness, Action<string>? log = null, double volumeDb = 0, double crossfadeSeconds = 0, double speed = 1, bool keepPitch = false, bool reverb = false, double startDelaySeconds = 0)
     {
         if (speed <= 0)
             speed = 1;
@@ -392,10 +392,42 @@ public static class Processing
         }
 
         TrimSilence(song);
+        ApplyStartDelay(song, startDelaySeconds);
         double leastBlend = reverb ? ReverbJumpBlendSeconds : stretch ? StretchedJumpBlendSeconds : 0;
         ApplyCrossfade(song, Math.Max(crossfadeSeconds, leastBlend));
         ApplyLevel(song, loudness, volumeDb);
         return song;
+    }
+
+    /// <summary>
+    /// Moves when the song starts. Above zero, adds that much silence first, so it starts later; below zero, skips
+    /// that much of its start. Loop points move with it. A skip never goes past a loop start or leaves too little.
+    /// </summary>
+    public static void ApplyStartDelay(Song song, double seconds)
+    {
+        int samples = (int)Math.Round(Math.Abs(seconds) * song.Rate);
+        if (samples == 0)
+            return;
+        if (seconds > 0)
+        {
+            song.Channels = song.Channels.Select(c => new short[samples].Concat(c).ToArray()).ToArray();
+            if (song.Loop)
+            {
+                song.LoopStart += samples;
+                song.LoopEnd += samples;
+            }
+            return;
+        }
+        int limit = song.Loop ? song.LoopStart : song.Length - song.Rate / 10;
+        samples = Math.Min(samples, Math.Max(0, limit));
+        if (samples == 0)
+            return;
+        song.Channels = song.Channels.Select(c => c[samples..]).ToArray();
+        if (song.Loop)
+        {
+            song.LoopStart -= samples;
+            song.LoopEnd -= samples;
+        }
     }
 
     /// <summary>

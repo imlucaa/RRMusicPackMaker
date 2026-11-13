@@ -87,6 +87,8 @@ internal static partial class Engine
                 return Check();
             case "get-ffmpeg":
                 return GetFfmpeg();
+            case "get-ytdlp":
+                return GetYtDlp();
             default:
                 Console.Error.WriteLine("Usage: engine catalog | songs | export --mode zip|folder|game [--target PATH] [--wii|--dolphin] | remove");
                 return 2;
