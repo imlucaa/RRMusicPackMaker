@@ -247,7 +247,7 @@ public static class Catalog
         new([0x23], "Funky Stadium", "n_skate_n"),
         new([0x24], "Thwomp Desert", "n_ryuusa_n"),
         new([0x25], "GCN Cookie Land", "r_GC_Battle32_n"),
-        new([0x26], "DS Twilight House", "r_ds_battle_n"),
+        new([0x26], "DS Twilight House", "r_DS_battle_n"),
         new([0x27], "SNES Battle Course 4", "r_sfc_battle_n"),
         new([0x28], "GBA Battle Course 3", "r_agb_battle_n"),
         new([0x29], "N64 Skyscraper", "r_64_battle_n"),
@@ -367,9 +367,13 @@ public static class Catalog
                 var original = rowCategory == CatRegs && track.Variant == 0
                     ? StockRace.FirstOrDefault(slot => slot.Slots.Contains(track.MusicSlot))
                     : null;
+                var arena = StockArenaOf(rowCategory, track);
                 var row = new TrackRow
                 {
                     Category = rowCategory,
+                    // Retro Rewind plays the 10 original arenas from the stock battle files, so those names are written too.
+                    AliasBases = arena == null ? [] : [arena.File],
+                    StockFinalBase = arena == null ? null : BattleFinalNameOf(arena.File),
                     OriginalBase = original?.File,
                     OriginalFinalBase = original == null ? null : FinalNameOf(original.File),
                     OriginalChannels = original?.Channels ?? 2,
@@ -435,13 +439,29 @@ public static class Catalog
             Category = category,
             Name = slot.Name,
             FileBase = slot.File,
-            StockFinalBase = FinalNameOf(slot.File),
+            StockFinalBase = category == CatStockBattle ? BattleFinalNameOf(slot.File) : FinalNameOf(slot.File),
             StockChannels = slot.Channels,
         };
         rows.Add(row);
         foreach (int id in slot.Slots)
             bySlot[id] = row;
     }
+
+    /// <summary>
+    /// The stock arena behind one of the 10 original battle arenas, or null. Matched by music slot and by name,
+    /// because newer arenas share those slots.
+    /// </summary>
+    private static StockSlot? StockArenaOf(string category, PulsarConfig.Track track) =>
+        category == CatBattle && track.Variant == 0
+            ? StockBattle.FirstOrDefault(slot => slot.Slots.Contains(track.MusicSlot) && NameKey(MainName(track.Name)).EndsWith(NameKey(slot.Name), StringComparison.Ordinal))
+            : null;
+
+    /// <summary>
+    /// A stock arena's last-minute file: the last _n becomes _F, the name the mariokartwii.com file list gives
+    /// for all 10 arenas, and the one that worked in game.
+    /// </summary>
+    public static string BattleFinalNameOf(string normalBase) =>
+        normalBase.EndsWith("_n", StringComparison.OrdinalIgnoreCase) ? normalBase[..^2] + "_F" : normalBase;
 
     /// <summary>The final lap name swaps the last _n for _f, keeping its case.</summary>
     public static string FinalNameOf(string normalBase)

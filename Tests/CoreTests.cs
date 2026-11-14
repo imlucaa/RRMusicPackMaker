@@ -43,6 +43,31 @@ public class CatalogTests
         Assert.Equal(final, Catalog.FinalNameOf(normal));
 
     [Fact]
+    public void OriginalBattleArenas_AlsoWriteStockNamesWithCapitalF()
+    {
+        // The names that fixed battle music in game, from the mariokartwii.com file list.
+        var expected = new Dictionary<string, string>
+        {
+            ["Wii Delfino Pier"] = "n_venice_n", ["Wii Funky Stadium"] = "n_skate_n", ["N64 Skyscraper"] = "r_64_battle_n",
+            ["GBA Battle Course 3"] = "r_agb_battle_n", ["DS Twilight House"] = "r_DS_battle_n", ["SNES Battle Course 4"] = "r_sfc_battle_n",
+            ["Wii Block Plaza"] = "n_block_n", ["Wii Chain Chomp Wheel"] = "n_casino_n", ["GCN Cookie Land"] = "r_GC_Battle32_n",
+            ["Wii Thwomp Desert"] = "n_ryuusa_n",
+        };
+        var battle = Catalog.Build(null, out _).Where(row => row.Category == Catalog.CatBattle).ToList();
+
+        foreach (var (name, file) in expected)
+        {
+            var row = battle.Single(r => r.Name == name);
+            Assert.Equal([file], row.AliasBases);
+            Assert.Equal(file[..^2] + "_F", row.StockFinalBase);
+            Assert.Contains(file, PackBuilder.ExpectedFiles(new Options(), row));
+        }
+        // Newer arenas share those music slots but have no stock file of their own.
+        Assert.Empty(battle.Single(r => r.Name == "GBA Battle Course 4").AliasBases);
+        Assert.Equal(10, battle.Count(r => r.AliasBases.Length > 0));
+    }
+
+    [Fact]
     public void MenusAndFanfares_SayWhereTheyPlay()
     {
         var rows = Catalog.Build(null, out _).Where(row => row.Category is Catalog.CatMenu or Catalog.CatFanfare).ToList();
