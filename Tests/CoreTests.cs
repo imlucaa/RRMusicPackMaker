@@ -43,6 +43,31 @@ public class CatalogTests
         Assert.Equal(final, Catalog.FinalNameOf(normal));
 
     [Fact]
+    public void OriginalBattleArenas_AlsoWriteStockNamesWithCapitalF()
+    {
+        // The names that fixed battle music in game, from the mariokartwii.com file list.
+        var expected = new Dictionary<string, string>
+        {
+            ["Wii Delfino Pier"] = "n_venice_n", ["Wii Funky Stadium"] = "n_skate_n", ["N64 Skyscraper"] = "r_64_battle_n",
+            ["GBA Battle Course 3"] = "r_agb_battle_n", ["DS Twilight House"] = "r_DS_battle_n", ["SNES Battle Course 4"] = "r_sfc_battle_n",
+            ["Wii Block Plaza"] = "n_block_n", ["Wii Chain Chomp Wheel"] = "n_casino_n", ["GCN Cookie Land"] = "r_GC_Battle32_n",
+            ["Wii Thwomp Desert"] = "n_ryuusa_n",
+        };
+        var battle = Catalog.Build(null, out _).Where(row => row.Category == Catalog.CatBattle).ToList();
+
+        foreach (var (name, file) in expected)
+        {
+            var row = battle.Single(r => r.Name == name);
+            Assert.Contains(file, row.AliasBases);
+            Assert.Equal(file[..^2] + "_F", row.StockFinalBase);
+            Assert.Contains(file, PackBuilder.ExpectedFiles(new Options(), row));
+        }
+        // Newer arenas share those music slots but have no stock file of their own.
+        Assert.DoesNotContain("r_agb_battle_n", battle.Single(r => r.Name == "GBA Battle Course 4").AliasBases);
+        Assert.Equal(10, battle.Count(r => r.StockFinalBase != null));
+    }
+
+    [Fact]
     public void MenusAndFanfares_SayWhereTheyPlay()
     {
         var rows = Catalog.Build(null, out _).Where(row => row.Category is Catalog.CatMenu or Catalog.CatFanfare).ToList();
@@ -117,12 +142,12 @@ public class CatalogTests
         var rows = Catalog.Build(null, out _);
         var chomp = rows.Single(r => r.Category == Catalog.CatBattle && r.Name == "Wii Chain Chomp Wheel");
         Assert.Equal("casino_battle_N", chomp.FileBase);
-        Assert.Equal(["344_N"], chomp.AliasBases);
-        Assert.Equal(["316_N"], rows.Single(r => r.Category == Catalog.CatBattle && r.Name == "SNES Battle Course 4").AliasBases);
+        Assert.Equal(["344_N", "n_casino_n"], chomp.AliasBases);
+        Assert.Equal(["316_N", "r_sfc_battle_n"], rows.Single(r => r.Category == Catalog.CatBattle && r.Name == "SNES Battle Course 4").AliasBases);
         // Every arena that borrows music gets its number; the ones with their own music keep one name. Same list as the site.
         Assert.Equal(
             ["316_N", "322_N", "326_N", "328_N", "335_N", "341_N", "342_N", "343_N", "344_N", "345_N"],
-            rows.Where(r => r.Category == Catalog.CatBattle).SelectMany(r => r.AliasBases).Order(StringComparer.Ordinal).ToArray());
+            rows.Where(r => r.Category == Catalog.CatBattle).SelectMany(r => r.AliasBases).Where(a => char.IsDigit(a[0])).Order(StringComparer.Ordinal).ToArray());
         // Race tracks keep one name.
         Assert.All(rows.Where(r => r.Category is Catalog.CatRetro or Catalog.CatCustom or Catalog.CatRegs), r => Assert.Empty(r.AliasBases));
     }

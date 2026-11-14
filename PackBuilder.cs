@@ -602,9 +602,10 @@ public static class PackBuilder
 
         foreach (string file in new[] { row.FileBase }.Concat(row.AliasBases))
             File.Copy(row.Source, Path.Combine(musicFolder, file + ".brstm"), true);
-        string? finalBase = row.StockFinalBase ?? row.PulsarFinalBase;
-        if (finalBase != null && row.FinalSource.Length > 0)
-            File.Copy(row.FinalSource, Path.Combine(musicFolder, finalBase + ".brstm"), true);
+        if (row.FinalSource.Length > 0)
+            foreach (string? finalBase in new[] { row.StockFinalBase, row.PulsarFinalBase }.Distinct())
+                if (finalBase != null)
+                    File.Copy(row.FinalSource, Path.Combine(musicFolder, finalBase + ".brstm"), true);
         if (row.OriginalActive)
         {
             Directory.CreateDirectory(originalFolder);
